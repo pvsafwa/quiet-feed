@@ -1,0 +1,37 @@
+Quiet Feed — modern build (Vite + React + TypeScript + Zustand + Framer Motion + Tailwind)
+
+MULTI-USER / AWS DEPLOYMENT
+  This file covers the single-user local app. For the multi-user, internet-hosted
+  version (Google sign-in, admin + user roles, server-side YouTube caching, Docker
+  on AWS/EC2), see DEPLOY.md and the docker-compose.yml + server/ folder.
+
+JUST USE IT  (no coding, same as before)
+  1) Keep this folder together: "Launch Quiet Feed.command" and the "app" folder.
+  2) FIRST TIME ONLY: right-click "Launch Quiet Feed.command" -> Open -> Open.
+     (If macOS blocks it: System Settings -> Privacy & Security -> "Open Anyway", then retry.)
+  3) A Terminal window opens and your browser opens the app at http://localhost:8000.
+     Keep that Terminal window open while you use it.
+  Your saved API key, channels, progress and tracked courses carry over automatically
+  (the app runs at the same http://localhost:8000 address as the old version).
+
+DEVELOP IT  (optional - needs Node.js 18+)
+  cd source
+  npm install
+  npm run dev        # live-reloading dev server
+  npm run build      # rebuild; then copy everything from source/dist/ into the app/ folder
+  npm run typecheck  # TypeScript check
+
+WHAT CHANGED
+  Core business logic is unchanged from the previous version: YouTube Data API calls,
+  watch-time + completion tracking (>=92% or ended), resume points, day streaks,
+  monitored-course hierarchy, Load More, and oldest-first playlists.
+
+NEW IN THIS VERSION
+  • Search box to filter videos / playlists by title.
+  • "Hide Shorts" toggle (drops clips <= 60 seconds).
+  • Auto-refresh (Off / 15m / 30m / 60m) in Setup — re-checks channels while open.
+  • Backup & restore: export everything to a JSON file and import it on another machine.
+  • "Mark all watched" button inside a playlist.
+  • Player keyboard shortcuts: Space play/pause, ←/→ seek 10s, F fullscreen, M mute, Esc close.
+  • Collapsible video description under the player.
+  • "New" badge on uploads published since your last visit.

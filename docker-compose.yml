@@ -1,0 +1,57 @@
+# Quiet Feed — full stack for a single Ubuntu/EC2 host.
+#   web (nginx, serves SPA + proxies /api)  →  server (Node API)  →  db (Postgres)
+# Copy .env.example to .env and fill it in, then:  docker compose up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quietfeed}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-quietfeed}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quietfeed} -d ${POSTGRES_DB:-quietfeed}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-quietfeed}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-quietfeed}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:?set YOUTUBE_API_KEY in .env}
+      CACHE_TTL_MINUTES: ${CACHE_TTL_MINUTES:-60}
+      REFRESH_INTERVAL_MINUTES: ${REFRESH_INTERVAL_MINUTES:-30}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+    expose:
+      - "3000"
+
+  web:
+    build:
+      context: .
+      dockerfile: source/Dockerfile
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  dbdata:

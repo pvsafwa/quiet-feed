@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+web-build/
+# Native prebuild output (managed by EAS; regenerate with `expo prebuild`)
+/android
+/ios
+*.log
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+google-services.json
