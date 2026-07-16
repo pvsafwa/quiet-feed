@@ -87,7 +87,10 @@ export function ProgressTab() {
           return (
             <div className="panelbox chan" key={cid}>
               <div className="chan-h">
-                {thumb ? <img src={thumb} alt="" /> : <span className="chan-dot" />}
+                {thumb ? <img src={thumb} alt="" onError={(e) => {
+                  const t = e.target as HTMLImageElement;
+                  if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                }} /> : <span className="chan-dot" />}
                 <div>
                   <div className="chan-name">{g.channel || 'Channel'}</div>
                   <div className="chan-sub">{g.items.length} course{g.items.length === 1 ? '' : 's'} · {gDone}/{gTot} videos done{gSpent > 0 ? ` · ${fmtSpan(gSpent)} watched` : ''}</div>

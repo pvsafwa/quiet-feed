@@ -28,7 +28,10 @@ function PlaylistCard({ p }: { p: PlaylistMeta }) {
       <div className="plthumb">
         <span className="layer l2" /><span className="layer l1" />
         <div className="front">
-          <img src={p.thumb} alt="" loading="lazy" />
+          <img src={p.thumb} alt="" loading="lazy" onError={(e) => {
+            const t = e.target as HTMLImageElement;
+            if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+          }} />
           <div className="play"><span><IPlay /></span></div>
           <button className={`star ${mon ? 'on' : ''}`} title={mon ? 'Tracking this course' : 'Track this course'}
             onClick={e => { e.stopPropagation(); toggle({ id: p.id, title: p.title, channelTitle: p.channelTitle, channelId: p.channelId, count: p.count }); }}>

@@ -21,7 +21,10 @@ export function VideoCard({ v }: { v: Video }) {
   return (
     <motion.article className="card" variants={itemV} onClick={() => openPlayer(v)} whileHover={{ y: -3 }} style={{ cursor: 'pointer' }}>
       <div className={`thumb ${done ? 'is-done' : ''}`}>
-        <img src={v.thumb} alt="" loading="lazy" />
+        <img src={v.thumb} alt="" loading="lazy" onError={(e) => {
+          const t = e.target as HTMLImageElement;
+          if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+        }} />
         {v.dur ? <div className="dur">{v.dur}</div> : null}
         {done ? <div className="donebadge"><ICheck /></div> : null}
         {!done && isNew ? <div className="newbadge">NEW</div> : null}

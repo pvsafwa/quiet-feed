@@ -19,7 +19,7 @@ function AudioViz({ playing, title, channel }: { playing: boolean; title: string
         {Array.from({ length: 9 }).map((_, i) => <span key={i} style={{ animationDelay: `${(i % 5) * 0.13}s`, animationDuration: `${0.7 + (i % 3) * 0.22}s` }} />)}
       </div>
       <div className="viz-title">{title}</div>
-      <div className="viz-sub">{channel} · audio only · tap to {playing ? 'pause' : 'play'}</div>
+      <div className="viz-sub">{channel} · Audio Only (v2) · tap to {playing ? 'pause' : 'play'}</div>
     </div>
   );
 }
@@ -36,8 +36,9 @@ export function PlayerModal() {
   const [descOpen, setDescOpen] = useState(false);
   const [videoOff, setVideoOff] = useState(true); // default: video hidden (blocks accidental taps to YouTube)
   const [playing, setPlaying] = useState(false);
-  const [pip, setPip] = useState(false);
+  const [pip, setPip] = useState(true);
   const [ended, setEnded] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
 
   function stopTick() { if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; useStore.getState().persistProg(); } }
@@ -97,7 +98,6 @@ export function PlayerModal() {
     setErrMsg(null);
     setVideoOff(true);
     setPlaying(false);
-    setPip(false);
     setEnded(false);
     tcRef.current = 0;
     if (!cur || isFile) return;
@@ -182,15 +182,40 @@ export function PlayerModal() {
             </button>
             <button className="qf-cbtn" onClick={close} title="Close" aria-label="Close"><IClose /></button>
           </div>
-          <div className="frame" ref={frameRef}>
+          <div className="frame">
+            <div ref={frameRef} style={{ width: '100%', height: '100%' }} />
             {!isFile && !errMsg && (
               <>
-                {videoOff && <div className="audiocover" onClick={togglePlay} role="button" aria-label={playing ? 'Pause' : 'Play'}><AudioViz playing={playing} title={cur.title} channel={cur.channelTitle} /></div>}
-                <button className="vidtoggle" onClick={() => setVideoOff(o => !o)}
+                <div className="audiocover" style={{ opacity: videoOff ? 1 : 0, pointerEvents: videoOff ? 'auto' : 'none' }} onClick={togglePlay} role="button" aria-label={playing ? 'Pause' : 'Play'}><AudioViz playing={playing} title={cur.title} channel={cur.channelTitle} /></div>
+                <button className="vidtoggle" onClick={() => {
+                  if (videoOff) {
+                    setShowConfirm(true);
+                  } else {
+                    setVideoOff(true);
+                  }
+                }}
                   title={videoOff ? 'Show video' : 'Hide video (audio keeps playing)'}
-                  aria-label={videoOff ? 'Show video' : 'Hide video'}>
+                  aria-label={videoOff ? 'Show video' : 'Hide video'}
+                >
                   {videoOff ? <IVideo /> : <IVideoOff />}
                 </button>
+                {showConfirm && (
+                  <div className="qf-backdrop" style={{ zIndex: 9999, display: 'grid', placeItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }}>
+                    <div className="login-card" style={{ background: 'var(--bg)', padding: '24px', borderRadius: '12px' }}>
+                      <div className="fm-title" style={{ marginBottom: '16px' }}>Are you sure want to unhide the video ?</div>
+                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                        <button className="btn" onClick={() => setShowConfirm(false)}>Cancel</button>
+                        <button className="btn primary" onClick={() => { 
+                          setShowConfirm(false); 
+                          setVideoOff(false); 
+                          const S = window.YT?.PlayerState;
+                          const p = playerRef.current;
+                          if (S && p) setPlaying(p.getPlayerState() === S.PLAYING);
+                        }}>Yes, Unhide</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {ended && (
                   <div className="endcover">
                     <div className="end-title">Finished</div>
