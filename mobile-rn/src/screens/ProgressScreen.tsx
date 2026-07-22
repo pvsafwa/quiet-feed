@@ -1,9 +1,10 @@
 import React from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useStore } from '../store';
-import { isDone, totals, streaks, lastDays } from '../lib/progress';
-import { fmtSpan, fmtTotal } from '../lib/format';
+import { totals, streaks, lastDays } from '../lib/progress';
+import { fmtSpan } from '../lib/format';
 import { colors, radius } from '../theme';
 
 export function ProgressScreen() {
@@ -22,14 +23,6 @@ export function ProgressScreen() {
     { v: String(t.started), l: 'In progress' },
     { v: `${st.cur} 🔥`, l: `Streak · best ${st.max}` },
   ];
-
-  const mon = Object.keys(prog.mon).map(id => {
-    const meta = prog.mon[id], pl = prog.pl[id] || ({} as any);
-    const ids: string[] = pl.ids || [];
-    const done = ids.filter(x => isDone(prog, x)).length;
-    const tot = ids.length || meta.count || 0;
-    return { id, title: meta.title, channel: meta.channelTitle || pl.channel || '', channelId: meta.channelId || pl.channelId || '', total: pl.total || 0, done, tot, pct: tot ? Math.round((done / tot) * 100) : 0 };
-  });
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
@@ -57,16 +50,17 @@ export function ProgressScreen() {
       </View>
 
       <View style={styles.panel}>
-        <Text style={styles.panelHead}>Tracked courses</Text>
-        {mon.length === 0 ? (
-          <Text style={styles.hint}>Star a playlist (or “Track course”) to follow it here.</Text>
-        ) : mon.map(m => (
-          <Pressable key={m.id} style={styles.course} onPress={() => navigation.navigate('PlaylistDetail', { playlist: { id: m.id, title: m.title, channelId: m.channelId, channelTitle: m.channel, count: m.tot, thumb: '' } })}>
-            <View style={styles.courseTop}><Text style={styles.courseName} numberOfLines={1}>{m.title}</Text><Text style={styles.courseN}>{m.tot ? `${m.done}/${m.tot}` : '…'}</Text></View>
-            <View style={styles.barWrap}><View style={[styles.barFill, { width: `${m.pct}%` }]} /></View>
-            <Text style={styles.courseSub}>{m.channel} · {m.pct}% · {fmtTotal(m.total) || '—'}</Text>
-          </Pressable>
-        ))}
+        <Text style={styles.panelHead}>Library</Text>
+        <Pressable style={styles.libBtn} onPress={() => navigation.navigate('TrackedCourses')}>
+          <Ionicons name="list" size={20} color={colors.ink} style={{ marginRight: 12 }} />
+          <Text style={styles.libText}>Tracked courses</Text>
+          <Ionicons name="chevron-forward" size={20} color={colors.inkFaint} />
+        </Pressable>
+        <Pressable style={[styles.libBtn, { borderBottomWidth: 0 }]} onPress={() => navigation.navigate('WatchHistory')}>
+          <Ionicons name="time-outline" size={20} color={colors.ink} style={{ marginRight: 12 }} />
+          <Text style={styles.libText}>Watch history</Text>
+          <Ionicons name="chevron-forward" size={20} color={colors.inkFaint} />
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -84,12 +78,6 @@ const styles = StyleSheet.create({
   barTrack: { flex: 1, width: '100%', maxWidth: 22, backgroundColor: colors.bg3, borderRadius: 5, overflow: 'hidden', justifyContent: 'flex-end', alignSelf: 'center' },
   bar: { width: '100%', backgroundColor: colors.accent, borderRadius: 5 },
   colLabel: { color: colors.inkFaint, fontSize: 9.5 },
-  hint: { color: colors.inkSoft, fontSize: 13, lineHeight: 19 },
-  course: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.line },
-  courseTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  courseName: { flex: 1, color: colors.ink, fontSize: 14.5, fontWeight: '600' },
-  courseN: { color: colors.inkSoft, fontSize: 13 },
-  barWrap: { height: 6, borderRadius: 4, backgroundColor: colors.bg3, overflow: 'hidden', marginTop: 9 },
-  barFill: { height: '100%', backgroundColor: colors.accent },
-  courseSub: { color: colors.inkFaint, fontSize: 12, marginTop: 7 },
+  libBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  libText: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '500' },
 });

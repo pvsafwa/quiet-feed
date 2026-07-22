@@ -46,8 +46,14 @@ export interface Store {
   progV: number;
   banner: string | null;
   toastMsg: { msg: string; err: boolean; id: number } | null;
+  // Currently-playing video. The player is a root-level overlay driven by this (same
+  // model as the web app), not a navigation screen — that's what allows it to float
+  // over the feed in PiP mode.
+  cur: Video | null;
 
   init(): Promise<void>;
+  openPlayer(v: Video): void;
+  closePlayer(): void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   afterLogin(): Promise<void>;
@@ -93,6 +99,10 @@ export const useStore = create<Store>((set, get) => ({
   progV: 0,
   banner: null,
   toastMsg: null,
+  cur: null,
+
+  openPlayer(v) { set({ cur: v }); },
+  closePlayer() { set({ cur: null }); get().commitProg(); },
 
   async init() {
     // Load device-local prefs + previous-visit stamp (powers the "New" badge), then auth.
@@ -143,6 +153,7 @@ export const useStore = create<Store>((set, get) => ({
       pl: { items: [], cursors: {}, loaded: false },
       sel: null, selVideos: [], plDur: {}, plDurLoading: new Set<string>(),
       prog: emptyProg(), progV: get().progV + 1, filter: 'all', banner: null,
+      cur: null,
     });
     get().toast('Signed out');
   },
@@ -331,4 +342,24 @@ export function plList(s: Store): PlaylistMeta[] {
 export function hasMorePlaylists(s: Store): boolean {
   const chans = s.filter === 'all' ? s.channels : s.channels.filter(c => c.id === s.filter);
   return chans.some(c => !s.pl.cursors[c.id]?.done);
+}
+
+export function watchHistory(s: Store): Video[] {
+  const map = new Map<string, Video>();
+  Object.values(s.vid.buffers).forEach(list => list.forEach(v => map.set(v.id, v)));
+  s.selVideos.forEach(v => map.set(v.id, v));
+  
+  const history: Video[] = [];
+  map.forEach(v => {
+    const p = s.prog.v[v.id];
+    if (p && (p.p > 0 || p.done)) history.push(v);
+  });
+  
+  history.sort((a, b) => {
+    const ta = s.prog.v[a.id]?.t || 0;
+    const tb = s.prog.v[b.id]?.t || 0;
+    return tb - ta;
+  });
+  
+  return history;
 }

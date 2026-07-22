@@ -12,3 +12,8 @@ web-build/
 *.jks
 *.keystore
 google-services.json
+
+# Release signing. NEVER commit: keystore.json holds the keystore password, and the
+# keystore itself is the only thing that can sign updates for an installed app —
+# lose it and every user must uninstall/reinstall. Back it up somewhere safe.
+/credentials

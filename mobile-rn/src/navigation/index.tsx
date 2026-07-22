@@ -10,8 +10,9 @@ import { FeedScreen } from '../screens/FeedScreen';
 import { PlaylistsScreen } from '../screens/PlaylistsScreen';
 import { ProgressScreen } from '../screens/ProgressScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { PlayerScreen } from '../screens/PlayerScreen';
 import { PlaylistDetailScreen } from '../screens/PlaylistDetailScreen';
+import { TrackedCoursesScreen } from '../screens/TrackedCoursesScreen';
+import { WatchHistoryScreen } from '../screens/WatchHistoryScreen';
 import { ChannelDrawer } from '../components/ChannelDrawer';
 
 const Stack = createNativeStackNavigator();
@@ -77,8 +78,9 @@ export function RootNavigator() {
       screenOptions={{ headerStyle: { backgroundColor: colors.bg2 }, headerTintColor: colors.ink, contentStyle: { backgroundColor: colors.bg } }}
     >
       <Stack.Screen name="Main" component={MainDrawer} options={{ headerShown: false }} />
-      <Stack.Screen name="Player" component={PlayerScreen} options={{ presentation: 'fullScreenModal', headerShown: false }} />
       <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ title: 'Playlist' }} />
+      <Stack.Screen name="TrackedCourses" component={TrackedCoursesScreen} options={{ title: 'Tracked Courses' }} />
+      <Stack.Screen name="WatchHistory" component={WatchHistoryScreen} options={{ title: 'Watch History' }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Account & settings' }} />
     </Stack.Navigator>
   );

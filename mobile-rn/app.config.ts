@@ -6,16 +6,27 @@ const config: ExpoConfig = {
   name: 'Quiet Feed',
   slug: 'quiet-feed',
   scheme: 'quietfeed',
-  version: '1.0.0',
+  version: '1.0.18',
   orientation: 'portrait',
-  userInterfaceStyle: 'dark',
-  // Custom icon/splash art can be added later (see PLAN.md). Expo uses defaults until then.
+  userInterfaceStyle: 'light',
+  icon: './assets/icon.png',
   android: {
     package: 'app.quietfeed',
+    versionCode: 20,
+    adaptiveIcon: {
+      foregroundImage: './assets/icon.png',
+      backgroundColor: '#14120f',
+    },
+  },
+  ios: {
+    bundleIdentifier: 'app.quietfeed',
   },
   plugins: [
     'expo-secure-store',
     '@react-native-google-signin/google-signin',
+    // Signs release builds with our own keystore instead of the shared Android debug key.
+    './plugins/withReleaseSigning',
+    './plugins/withBackgroundAudio',
   ],
   extra: {
     // Mirror of the EXPO_PUBLIC_* values for convenience if needed at runtime.

@@ -46,8 +46,12 @@ export function FeedScreen() {
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       data={list}
       keyExtractor={(v) => v.id}
+      initialNumToRender={8}
+      maxToRenderPerBatch={5}
+      windowSize={11}
+      removeClippedSubviews={true}
       ListHeaderComponent={header}
-      renderItem={({ item }) => <VideoCard v={item} onPress={() => navigation.navigate('Player', { video: item })} />}
+      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item)} />}
       refreshControl={<RefreshControl refreshing={busy && list.length > 0} onRefresh={() => runVideos(true)} tintColor={colors.accent} />}
       onEndReachedThreshold={0.6}
       onEndReached={() => { if (more && !busy) runVideos(false); }}

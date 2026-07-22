@@ -1,0 +1,7 @@
+expo.modules.pip.expo-pip-pngs-0 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/generated/res/pngs/release
+expo.modules.pip.expo-pip-resValues-1 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/generated/res/resValues/release
+expo.modules.pip.expo-pip-mergeReleaseResources-2 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+expo.modules.pip.expo-pip-mergeReleaseResources-3 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+expo.modules.pip.expo-pip-release-4 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/merged_res/release/mergeReleaseResources
+expo.modules.pip.expo-pip-main-5 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/src/main/res
+expo.modules.pip.expo-pip-release-6 /Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/src/release/res

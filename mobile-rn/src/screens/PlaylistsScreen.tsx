@@ -30,6 +30,10 @@ export function PlaylistsScreen() {
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       data={list}
       keyExtractor={(p) => p.id}
+      initialNumToRender={8}
+      maxToRenderPerBatch={5}
+      windowSize={11}
+      removeClippedSubviews={true}
       renderItem={({ item: p }) => {
         const m = prog.pl[p.id];
         const ids = m?.ids || [];
