@@ -218,6 +218,22 @@ function PlayerWindow({ video }: { video: Video }) {
                           Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
                           window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
                           document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+
+                          setInterval(function() {
+                            try {
+                              var player = document.querySelector('.html5-video-player');
+                              if (player && (player.classList.contains('ad-interrupting') || player.classList.contains('ad-showing'))) {
+                                var video = document.querySelector('video');
+                                if (video && isFinite(video.duration) && video.duration > 0) {
+                                  video.currentTime = video.duration;
+                                }
+                              }
+                              var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot, .ytp-ad-overlay-close-button');
+                              if (skipBtn) {
+                                skipBtn.click();
+                              }
+                            } catch(e) {}
+                          }, 250);
                         } catch(e) {}
                       })();
                       true;
