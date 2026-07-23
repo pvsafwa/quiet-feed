@@ -36,7 +36,7 @@ class ExpoPipModule : Module() {
 
     Function("setShouldEnterPipOnLeave") { enabled: Boolean ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
+        val mainActivityClass = Class.forName("app.mytube.MainActivity")
         val companionField = mainActivityClass.getDeclaredField("Companion")
         companionField.isAccessible = true
         val companionInstance = companionField.get(null)
@@ -53,7 +53,7 @@ class ExpoPipModule : Module() {
 
     Function("isInPip") {
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
+        val mainActivityClass = Class.forName("app.mytube.MainActivity")
         val companionField = mainActivityClass.getDeclaredField("Companion")
         companionField.isAccessible = true
         val companionInstance = companionField.get(null)
@@ -83,7 +83,7 @@ class ExpoPipModule : Module() {
 
     Function("setPlaybackState") { playing: Boolean ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
+        val mainActivityClass = Class.forName("app.mytube.MainActivity")
         val companionField = mainActivityClass.getDeclaredField("Companion")
         companionField.isAccessible = true
         val companionInstance = companionField.get(null)
@@ -100,7 +100,7 @@ class ExpoPipModule : Module() {
 
     Function("syncPlaybackPosition") { positionSec: Float, durationSec: Float, playing: Boolean ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
+        val mainActivityClass = Class.forName("app.mytube.MainActivity")
         val companionField = mainActivityClass.getDeclaredField("Companion")
         companionField.isAccessible = true
         val companionInstance = companionField.get(null)

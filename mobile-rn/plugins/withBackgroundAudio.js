@@ -48,7 +48,7 @@ function withAndroidPipMainActivity(config) {
   override fun onBind(intent: android.content.Intent?): android.os.IBinder? = null
   override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
     try {
-      app.quietfeed.MainActivity.Companion.currentNotification?.let {
+      app.mytube.MainActivity.Companion.currentNotification?.let {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
           startForeground(1001, it, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } else {
@@ -105,7 +105,7 @@ class MainActivity : ReactActivity() {
 
   private val playbackReceiver = object : android.content.BroadcastReceiver() {
     override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
-      if (intent.action == "app.quietfeed.ACTION_PLAY_PAUSE") {
+      if (intent.action == "app.mytube.ACTION_PLAY_PAUSE") {
         val nextPlaying = !isPlaying
         isPlaying = nextPlaying
         updateNotificationAndWakeLock(nextPlaying)
@@ -121,7 +121,7 @@ class MainActivity : ReactActivity() {
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onPipPlayPause", null)
         }
-      } else if (intent.action == "app.quietfeed.ACTION_STOP") {
+      } else if (intent.action == "app.mytube.ACTION_STOP") {
         isPlaying = false
         togglePlaybackNatively(false)
         val serviceIntent = android.content.Intent(context, AudioForegroundService::class.java)
@@ -253,7 +253,7 @@ class MainActivity : ReactActivity() {
         )
         notificationManager.createNotificationChannel(channel)
 
-        val intent = android.content.Intent("app.quietfeed.ACTION_PLAY_PAUSE")
+        val intent = android.content.Intent("app.mytube.ACTION_PLAY_PAUSE")
         intent.setPackage(packageName)
         val pendingIntent = android.app.PendingIntent.getBroadcast(
           this,
@@ -262,7 +262,7 @@ class MainActivity : ReactActivity() {
           android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
 
-        val deleteIntent = android.content.Intent("app.quietfeed.ACTION_STOP")
+        val deleteIntent = android.content.Intent("app.mytube.ACTION_STOP")
         deleteIntent.setPackage(packageName)
         val pendingDeleteIntent = android.app.PendingIntent.getBroadcast(
           this,
@@ -345,13 +345,13 @@ class MainActivity : ReactActivity() {
       if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
         registerReceiver(
           playbackReceiver,
-          android.content.IntentFilter("app.quietfeed.ACTION_PLAY_PAUSE"),
+          android.content.IntentFilter("app.mytube.ACTION_PLAY_PAUSE"),
           android.content.Context.RECEIVER_EXPORTED
         )
       } else {
         registerReceiver(
           playbackReceiver,
-          android.content.IntentFilter("app.quietfeed.ACTION_PLAY_PAUSE")
+          android.content.IntentFilter("app.mytube.ACTION_PLAY_PAUSE")
         )
       }
     }
