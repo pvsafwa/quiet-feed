@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, useWindowDimensions, DeviceEventEmitter, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, Pressable, StyleSheet, useWindowDimensions, DeviceEventEmitter, TouchableWithoutFeedback, AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +43,25 @@ function PlayerWindow({ video }: { video: Video }) {
   // Resume point
   const pr = useStore.getState().prog.v[video.id];
   const startAt = pr && !pr.done && pr.p > 10 && (!pr.d || pr.p < pr.d * 0.95) ? Math.floor(pr.p) : 0;
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active' && wantPlay) {
+        ExpoPip.setPlaybackState(true);
+      }
+    });
+    return () => sub.remove();
+  }, [wantPlay]);
+
+  const togglePlay = () => {
+    if (ended) {
+      playerRef.current?.seekTo(0, true);
+      setEnded(false);
+      setWantPlay(true);
+      return;
+    }
+    setWantPlay(p => !p);
+  };
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('onPipPlayPause', () => {
@@ -207,7 +226,7 @@ function PlayerWindow({ video }: { video: Video }) {
                 />
               </View>
 
-              <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
+              <Pressable style={styles.videoOverlay} onPress={togglePlay}>
                   {ended ? (
                     <View style={styles.orb}>
                       <Ionicons name="refresh" size={32} color={colors.onAccent} />
