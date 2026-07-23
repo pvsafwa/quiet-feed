@@ -55,6 +55,7 @@ services:
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     expose:
       - "3001"
 
@@ -73,6 +74,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-quietfeed}:${POSTGRES_PASSWORD}@db:5432/quietfeed_content
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://quietfeed:quietfeed@rabbitmq:5672
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     expose:
       - "3002"
 
@@ -87,6 +89,7 @@ services:
       NODE_ENV: production
       PORT: 3003
       DATABASE_URL: postgres://${POSTGRES_USER:-quietfeed}:${POSTGRES_PASSWORD}@db:5432/quietfeed_progress
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     expose:
       - "3003"
 
