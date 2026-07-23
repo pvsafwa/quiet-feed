@@ -6,9 +6,9 @@ import { api, ApiError, setAuthToken, type ApiUser } from './lib/api';
 import { googleSignIn, googleSignOut } from './lib/auth';
 import { normProg, emptyProg, registerPlaylist } from './lib/progress';
 
-const TOKEN_KEY = 'qf_token';
-const PREFS_KEY = 'qf_prefs';
-const VISIT_KEY = 'qf_lastvisit';
+const TOKEN_KEY = 'mt_token';
+const PREFS_KEY = 'mt_prefs';
+const VISIT_KEY = 'mt_lastvisit';
 
 export const SHORT_MAX = 60;
 
@@ -174,7 +174,7 @@ export const useStore = create<Store>((set, get) => ({
   persistProg() { debouncedSaveProg(get().prog); },
 
   toast(msg, err = false) { set({ toastMsg: { msg, err, id: Date.now() } }); },
-  showError(msg) { console.error('[Quiet Feed]', msg); set({ banner: msg }); },
+  showError(msg) { console.error('[My Tube]', msg); set({ banner: msg }); },
   hideError() { set({ banner: null }); },
 
   async addChannel(raw) {

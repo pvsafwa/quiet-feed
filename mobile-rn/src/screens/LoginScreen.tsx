@@ -13,7 +13,7 @@ export function LoginScreen() {
     <View style={styles.wrap}>
       <View style={styles.card}>
         <View style={styles.mark}><Ionicons name="play" size={30} color={colors.onAccent} /></View>
-        <Text style={styles.title}>quiet feed</Text>
+        <Text style={styles.title}>My Tube</Text>
         <Text style={styles.sub}>Only your channels · no rabbit holes.{'\n'}Sign in to see your feed and pick up where you left off.</Text>
 
         <Pressable style={[styles.gbtn, !configured && styles.disabled]} disabled={!configured} onPress={() => signIn()}>
