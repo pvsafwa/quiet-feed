@@ -16,7 +16,7 @@ export function ChannelDrawer(props: DrawerContentComponentProps) {
 
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 8 }}>
-      <Text style={styles.title}>Channels</Text>
+      <Text style={styles.title}>My Tube</Text>
 
       <Pressable onPress={() => pick('all')} style={[styles.item, filter === 'all' && styles.active]}>
         <View style={styles.allIc}><Ionicons name="reorder-three" size={16} color={filter === 'all' ? colors.onAccent : colors.inkSoft} /></View>

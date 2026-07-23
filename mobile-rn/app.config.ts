@@ -3,15 +3,15 @@ import { ExpoConfig } from 'expo/config';
 // App configuration. Secrets/URLs come from EXPO_PUBLIC_* env vars (see .env.example),
 // which Expo inlines at build time.
 const config: ExpoConfig = {
-  name: 'Quiet Feed',
-  slug: 'quiet-feed',
-  scheme: 'quietfeed',
+  name: 'My Tube',
+  slug: 'my-tube',
+  scheme: 'mytube',
   version: '1.0.18',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   icon: './assets/icon.png',
   android: {
-    package: 'app.quietfeed',
+    package: 'app.mytube',
     versionCode: 20,
     adaptiveIcon: {
       foregroundImage: './assets/icon.png',
@@ -19,7 +19,7 @@ const config: ExpoConfig = {
     },
   },
   ios: {
-    bundleIdentifier: 'app.quietfeed',
+    bundleIdentifier: 'app.mytube',
   },
   plugins: [
     'expo-secure-store',
