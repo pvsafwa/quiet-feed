@@ -1,15 +1,14 @@
 import { startRefreshWorker, stopRefreshWorker } from './worker/refresh';
-import amqplib from 'amqplib';
-import { env } from './env';
+import { connect } from 'amqplib';
 
 async function main(): Promise<void> {
   console.log(`[worker-service] Starting YouTube Sync Worker...`);
 
   // Setup RabbitMQ publisher
-  let mqConn: amqplib.Connection | null = null;
-  let ch: amqplib.Channel | null = null;
+  let mqConn: any = null;
+  let ch: any = null;
   try {
-    mqConn = await amqplib.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
+    mqConn = await connect(process.env.RABBITMQ_URL || 'amqp://localhost');
     ch = await mqConn.createChannel();
     await ch.assertQueue('youtube_updates');
     console.log('[worker-service] Connected to RabbitMQ');

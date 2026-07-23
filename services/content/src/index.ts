@@ -6,7 +6,7 @@ import { env } from './env';
 import { attachAuth } from './auth/middleware';
 import { channelsRouter } from './routes/channels';
 import { contentRouter } from './routes/content';
-import amqplib from 'amqplib';
+import { connect } from 'amqplib';
 
 async function main(): Promise<void> {
   const app = express();
@@ -34,19 +34,19 @@ async function main(): Promise<void> {
   const server = app.listen(env.PORT, () => console.log(`[content-service] listening on :${env.PORT}`));
 
   // Setup RabbitMQ consumer
-  let mqConn: amqplib.Connection | null = null;
+  let mqConn: any = null;
   try {
-    mqConn = await amqplib.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
+    mqConn = await connect(process.env.RABBITMQ_URL || 'amqp://localhost');
+    console.log('[content-service] Connected to RabbitMQ');
     const ch = await mqConn.createChannel();
     await ch.assertQueue('youtube_updates');
-    ch.consume('youtube_updates', (msg) => {
+    ch.consume('youtube_updates', (msg: any) => {
       if (msg) {
         console.log(`[content-service] Received update: ${msg.content.toString()}`);
         // Handle cache invalidation or DB updates here...
         ch.ack(msg);
       }
     });
-    console.log('[content-service] Connected to RabbitMQ');
   } catch (err) {
     console.error('[content-service] RabbitMQ connection failed', err);
   }
