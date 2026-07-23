@@ -6,13 +6,13 @@ const config: ExpoConfig = {
   name: 'My Tube',
   slug: 'my-tube',
   scheme: 'mytube',
-  version: '1.0.21',
+  version: '1.0.22',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   icon: './assets/icon.png',
   android: {
     package: 'app.mytube',
-    versionCode: 23,
+    versionCode: 24,
     adaptiveIcon: {
       foregroundImage: './assets/icon.png',
       backgroundColor: '#14120f',
