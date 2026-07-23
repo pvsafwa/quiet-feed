@@ -19,7 +19,7 @@ export function Header() {
         )}
         <div className="mark"><IPlay style={{ marginLeft: 2 }} /></div>
         <div>
-          <h1>quiet <i>feed</i></h1>
+          <h1>My <i>Tube</i></h1>
           <p>ONLY YOUR CHANNELS · NO RABBIT HOLES</p>
         </div>
       </div>

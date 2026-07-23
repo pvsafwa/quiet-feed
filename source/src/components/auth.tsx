@@ -33,7 +33,7 @@ export function Login() {
     <div className="login">
       <motion.div className="login-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <div className="brand-mark big"><IPlay /></div>
-        <h1 className="login-title">quiet <i>feed</i></h1>
+        <h1 className="login-title">My <i>Tube</i></h1>
         <p className="login-sub">Only your channels · no rabbit holes.<br />Sign in to see your feed and pick up where you left off.</p>
         <div ref={btnRef} className="gbtn" />
         {!hasClientId()
