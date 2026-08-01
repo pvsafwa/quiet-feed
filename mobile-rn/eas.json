@@ -12,8 +12,8 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://quietfeed.devopspractice.live",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "943416117987-r6r0ivdbou2884u3p0gvte5oksfng9ep.apps.googleusercontent.com"
+        "EXPO_PUBLIC_API_URL": "https://my-tube.devopspractice.live",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "943416117987-g37k50315c1jgi4utpjefscka2bsu16a.apps.googleusercontent.com"
       }
     },
     "production": {
