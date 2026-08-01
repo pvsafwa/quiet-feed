@@ -1,21 +1,27 @@
 # 📺 Quiet Feed
 
-> A private, ad-free YouTube learning companion — curated channels, distraction-free playback, background audio, and per-user progress tracking — deployed as a full-stack web app with an optional native Android client.
+> A private, ad-free YouTube learning companion — curated channels, distraction-free playback, background audio, and per-user progress tracking.
 
 ---
 
 ## Table of Contents
 
 1. [What Is This?](#what-is-this)
-2. [Architecture Overview](#architecture-overview)
+2. [Architecture — DevOps / Build & Release View](#architecture--devops--build--release-view)
+   - [Current State vs. Target State](#current-state-vs-target-state)
+   - [Service Inventory](#service-inventory)
+   - [Service Dependency & Startup Order](#service-dependency--startup-order)
+   - [Internal Communication Map](#internal-communication-map)
+   - [Port Allocation](#port-allocation)
+   - [Data Stores](#data-stores)
 3. [Tech Stack](#tech-stack)
 4. [Project Structure](#project-structure)
 5. [API Reference](#api-reference)
 6. [Prerequisites](#prerequisites)
-7. [Step-by-Step: Run Locally](#step-by-step-run-locally)
-8. [Step-by-Step: Deploy on a Cloud Server (Ubuntu/EC2)](#step-by-step-deploy-on-a-cloud-server-ubuntuec2)
-9. [Step-by-Step: Build the Android App](#step-by-step-build-the-android-app)
-10. [Environment Variables Reference](#environment-variables-reference)
+7. [Environment Variables Reference](#environment-variables-reference)
+8. [One-Time Google Cloud Setup](#one-time-google-cloud-setup)
+9. [Running the Full Stack Locally — No Containers](#running-the-full-stack-locally--no-containers)
+10. [Building the Android APK](#building-the-android-apk)
 11. [Useful Commands](#useful-commands)
 12. [Troubleshooting](#troubleshooting)
 
@@ -23,117 +29,250 @@
 
 ## What Is This?
 
-Quiet Feed is a **self-hosted, multi-user YouTube learning app** built for distraction-free video consumption. An admin curates a list of YouTube channels; signed-in users browse videos from those channels, watch them with background audio support, and their watch progress is saved server-side.
+Quiet Feed is a **self-hosted, multi-user YouTube learning app**. An admin curates a list of YouTube channels; signed-in users browse videos, watch them with background audio, and their watch progress is saved server-side.
 
-### Key Features
-
-- 🔑 **Google Sign-In** — secure OAuth 2.0 login, no passwords
-- 👑 **Admin / User roles** — admins manage channels, users watch
-- 🎥 **Distraction-free player** — no recommendations, no comments
-- 🔇 **Background audio** — phone screen can lock while audio plays (Android)
-- 📈 **Per-user progress tracking** — resume where you left off across devices
-- ⚡ **YouTube quota-efficient** — one shared server-side cache; 1 user or 10,000 users cost the same YouTube API quota
-- 📱 **Android app** — React Native + Expo native client (APK)
-- 🌐 **Web app** — React SPA served via nginx, accessible from any browser
+**Key features:**
+- Google OAuth 2.0 login (no passwords)
+- Admin / User roles — admins manage channels, users watch
+- Distraction-free player (no recommendations, no comments)
+- Background audio on Android (screen can lock while audio continues)
+- Per-user watch progress — resume across devices
+- YouTube quota-efficient — one shared server-side cache per channel
+- Native Android APK (React Native + Expo)
+- Web SPA (React + Vite) served via reverse proxy
 
 ---
 
-## Architecture Overview
+## Architecture — DevOps / Build & Release View
+
+### Current State vs. Target State
+
+This branch (`feature/microservices-migration`) is a **work in progress**. Two states exist:
+
+| State | Description |
+|-------|-------------|
+| ✅ **Fully built (runs today)** | A single Node.js monolith (`/server`) handles auth, content, progress, and background refresh in one process. This is what can be run right now. |
+| 🚧 **Target (in progress)** | A microservices decomposition is planned: Auth, Content, Progress, Worker, and API Gateway as separate services. The `docker-compose.yml` on this branch maps it out. The individual service source folders under `/services/` are still being implemented. |
+
+The rest of this document describes how to run the **current working system (monolith)**.
+
+---
+
+### Service Inventory
+
+#### Current Architecture — Monolith (What Runs Today)
 
 ```
-                          ┌────────────────────────────────┐
-  Browser / Android App   │         Nginx (Port 80)         │
-  ─────────────────────▶  │  • Serves React SPA (static)    │
-                          │  • Proxies /api/* → server:3000 │
-                          └──────────────┬─────────────────┘
-                                         │ HTTP (internal)
-                                         ▼
-                          ┌─────────────────────────────────┐
-                          │     Node.js / Express (Port 3000) │
-                          │  • Google OAuth token verification │
-                          │  • Session management (JWT cookie) │
-                          │  • Channel & video management     │
-                          │  • YouTube Data API v3 proxy      │
-                          │  • Per-user progress CRUD         │
-                          │  • Background refresh worker      │
-                          └──────────┬──────────────────────┘
-                     SQL             │          HTTPS
-           ┌─────────────────────────┘          │
-           ▼                                    ▼
-  ┌─────────────────┐               ┌───────────────────────┐
-  │  PostgreSQL 16  │               │  YouTube Data API v3   │
-  │  (Docker vol.)  │               │  (Google Cloud)        │
-  └─────────────────┘               └───────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ [1] PostgreSQL 16  — one shared database                            │
+│     Tables: users, channels, content_cache, progress               │
+├─────────────────────────────────────────────────────────────────────┤
+│ [2] Node.js API Server (port 3000)  — single process                │
+│     ├─ Auth module       Google OAuth token verify, JWT cookies     │
+│     ├─ Channels module   admin CRUD for channel list                │
+│     ├─ Content module    YouTube API proxy + Postgres cache         │
+│     ├─ Progress module   per-user watch progress read/write         │
+│     └─ Refresh worker    background setInterval re-warms cache      │
+├─────────────────────────────────────────────────────────────────────┤
+│ [3] Nginx / Vite dev server (port 8080 / 5173)                      │
+│     Serves React SPA static files + reverse proxies /api → :3000   │
+├─────────────────────────────────────────────────────────────────────┤
+│ [4] React SPA  — runs in the user's browser (client-side)          │
+│ [5] Android APK  — optional native client                          │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### How Data Flows
+#### Target Architecture — Microservices (Planned)
 
-1. **User opens the web app or Android app** → Nginx/CDN serves the React SPA.
-2. **User signs in with Google** → The client sends the Google ID token to `POST /api/auth/google`. The server verifies it with Google, creates/finds the user in Postgres, and returns a signed session cookie.
-3. **User browses channels** → React calls `GET /api/channels`. The server reads admin-curated channels from Postgres.
-4. **User opens a channel** → React calls `GET /api/channels/:id/uploads`. The server checks its Postgres cache. If stale, it fetches from the YouTube Data API, stores the result, and returns it. If fresh, no YouTube call is made.
-5. **User watches a video** → The embedded YouTube iframe player handles streaming. The client ticks progress to `PUT /api/progress` every few seconds.
-6. **Background worker** — runs inside the server container every `REFRESH_INTERVAL_MINUTES` to pre-warm stale channel caches so users never wait for a cold fetch.
+```
+Infrastructure Layer  (must be FULLY UP before any service starts)
+──────────────────────────────────────────────────────────────────
+[1] PostgreSQL 16    port 5432    one separate DB per service
+[2] Redis            port 6379    in-memory cache for content_service
+[3] RabbitMQ         port 5672    message broker for async refresh jobs
+                     port 15672   management/admin UI
 
-### Why Quota Is Never a Problem
+Application Services  (start in parallel AFTER infrastructure is ready)
+──────────────────────────────────────────────────────────────────────
+[4] auth_service      port 3001   Google OAuth, session cookies, user roles
+[5] content_service   port 3002   YouTube proxy, PostgreSQL + Redis cache,
+                                  publishes refresh jobs → RabbitMQ
+[6] progress_service  port 3003   per-user watch progress CRUD
+[7] worker_service    no port     consumes RabbitMQ refresh jobs,
+                                  calls YouTube API, warms cache
 
-Every user watches videos from the **same admin-curated set of channels**. The server fetches each channel once and caches it. Whether you have 1 or 10,000 users, only the number of channels determines YouTube API usage.
+Routing Layer  (start AFTER all application services are healthy)
+─────────────────────────────────────────────────────────────────
+[8] API Gateway       port 3000   nginx reverse proxy, routes by URL path:
+                                   /api/auth/*     → auth_service:3001
+                                   /api/channels/* → content_service:3002
+                                   /api/progress/* → progress_service:3003
+
+Presentation Layer  (start AFTER Gateway is healthy)
+────────────────────────────────────────────────────
+[9] Web (nginx)       port 8080   serves React SPA static files,
+                                  proxies /api/* → Gateway:3000
+
+[10] Browser / Android APK  — user-facing, requires Web to be up
+```
+
+---
+
+### Service Dependency & Startup Order
+
+**This is critical. Never start a service before its dependency is healthy.** Starting out of order causes connection refused errors or silent data corruption.
+
+```
+STEP  SERVICE               DEPENDS ON         READINESS CHECK
+────  ──────────────────    ───────────────    ────────────────────────────────────
+ 1.   PostgreSQL            (none)             pg_isready -U quietfeed -d quietfeed
+                                               → "accepting connections"
+
+ 2.   Redis                 (none)             redis-cli ping → "PONG"
+      ⚠ Only needed for microservices target
+
+ 3.   RabbitMQ              (none)             rabbitmq-diagnostics check_port_connectivity
+      ⚠ Only needed for microservices target   OR: curl -s http://localhost:15672 returns HTML
+
+──── Wait for steps 1-3 before proceeding ──────────────────────────────────────
+
+ 4a.  Node.js server        PostgreSQL         curl http://localhost:3000/api/health
+      [MONOLITH]                               → {"ok":true}
+
+ 4b.  auth_service          PostgreSQL         curl http://localhost:3001/health
+      content_service       PostgreSQL         curl http://localhost:3002/health
+      progress_service      Redis              curl http://localhost:3003/health
+      worker_service        RabbitMQ           check process is running (no HTTP port)
+      [MICROSERVICES]       RabbitMQ
+      ↳ All four can start in parallel
+
+──── Wait for step 4a OR step 4b before proceeding ────────────────────────────
+
+ 5.   API Gateway (nginx)   4a or 4b           curl http://localhost:3000/api/health
+
+──── Wait for step 5 before proceeding ────────────────────────────────────────
+
+ 6.   Web nginx /           Gateway (step 5)   http://localhost:8080 returns HTML
+      Vite dev server
+
+──── Step 7 is user-facing ─────────────────────────────────────────────────────
+
+ 7.   Browser / Android     Web (step 6)       App loads and Google sign-in works
+```
+
+---
+
+### Internal Communication Map
+
+```
+FROM                    TO                      PROTOCOL    CONNECTION STRING
+────────────────────    ──────────────────────  ─────────   ──────────────────────────────
+Browser / APK           Web nginx               HTTP(S)     http://localhost:8080 (local)
+Web nginx               API server              HTTP        proxy_pass http://localhost:3000
+API server (monolith)   PostgreSQL              TCP/SQL     DATABASE_URL env var
+API server (monolith)   YouTube Data API v3     HTTPS       outbound, needs internet access
+auth_service            PostgreSQL              TCP/SQL     DATABASE_URL (quietfeed_auth DB)
+content_service         PostgreSQL              TCP/SQL     DATABASE_URL (quietfeed_content DB)
+content_service         Redis                   TCP         REDIS_URL env var
+content_service         RabbitMQ                AMQP        RABBITMQ_URL env var (publisher)
+progress_service        PostgreSQL              TCP/SQL     DATABASE_URL (quietfeed_progress DB)
+worker_service          RabbitMQ                AMQP        RABBITMQ_URL env var (consumer)
+worker_service          YouTube Data API v3     HTTPS       outbound, needs internet access
+API Gateway             auth_service            HTTP        upstream localhost:3001
+API Gateway             content_service         HTTP        upstream localhost:3002
+API Gateway             progress_service        HTTP        upstream localhost:3003
+```
+
+> **Firewall rule:** Only port **8080** (or 80 in production) needs to be reachable from outside.
+> All other ports are internal and should be blocked from the public internet.
+
+---
+
+### Port Allocation
+
+| Service | Port | Protocol | Visibility |
+|---------|------|----------|------------|
+| PostgreSQL | `5432` | TCP | Internal only |
+| Redis | `6379` | TCP | Internal only |
+| RabbitMQ — AMQP | `5672` | AMQP | Internal only |
+| RabbitMQ — Management UI | `15672` | HTTP | Internal only (dev debugging) |
+| auth_service | `3001` | HTTP | Internal only |
+| content_service | `3002` | HTTP | Internal only |
+| progress_service | `3003` | HTTP | Internal only |
+| API server (monolith) | `3000` | HTTP | Internal only |
+| API Gateway (nginx) | `3000` | HTTP | Internal only |
+| Web server (nginx / Vite) | `8080` | HTTP | **Public-facing** |
+
+---
+
+### Data Stores
+
+| Store | Used By | What It Holds |
+|-------|---------|---------------|
+| PostgreSQL `quietfeed` (monolith) | server | `users`, `channels`, `content_cache`, `progress` |
+| PostgreSQL `quietfeed_auth` | auth_service | `users` table |
+| PostgreSQL `quietfeed_content` | content_service | `channels`, `content_cache` |
+| PostgreSQL `quietfeed_progress` | progress_service | `progress` |
+| Redis | content_service | Hot cache for YouTube API responses (TTL-based) |
+| RabbitMQ | content_service → worker_service | Async job queue for cache refresh tasks |
+
+> In the microservices model, each service **owns its own database** and never queries another service's DB directly. This is intentional service isolation.
 
 ---
 
 ## Tech Stack
 
-### Backend (`/server`)
+### Backend API Server (`/server`)
 
-| Component | Technology |
-|-----------|-----------|
-| Runtime | Node.js 20 |
-| Framework | Express 4 |
-| Language | TypeScript 5 |
-| Database | PostgreSQL 16 |
-| DB client | `pg` (node-postgres) |
-| Auth | Google OAuth 2.0 (`google-auth-library`) + JWT session cookies (`jsonwebtoken`) |
-| Env validation | Zod |
-| Security | Helmet, CORS |
-| Background jobs | In-process `setInterval` refresh worker |
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Express | 4.x |
+| Language | TypeScript | 5.x |
+| Database client | `pg` (node-postgres) | 8.x |
+| Auth | `google-auth-library` + `jsonwebtoken` | — |
+| Env validation | `zod` | 3.x |
+| HTTP security | `helmet`, `cors` | — |
+| Dev hot-reload | `tsx watch` | — |
 
 ### Frontend Web App (`/source`)
 
-| Component | Technology |
-|-----------|-----------|
-| Framework | React 18 |
-| Language | TypeScript 5 |
-| Build tool | Vite 5 |
-| State management | Zustand 4 |
-| Animations | Framer Motion 11 |
-| Styling | Tailwind CSS 3 + Vanilla CSS |
-| Served by | Nginx 1.27 (inside Docker) |
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Framework | React | 18.x |
+| Language | TypeScript | 5.x |
+| Build tool | Vite | 5.x |
+| State management | Zustand | 4.x |
+| Animations | Framer Motion | 11.x |
+| Styling | Tailwind CSS + Vanilla CSS | 3.x |
+| Dev server | Vite Dev Server | — |
+| Production server | Nginx | 1.27 |
 
 ### Android Mobile App (`/mobile-rn`)
 
 | Component | Technology |
 |-----------|-----------|
 | Framework | React Native 0.86 + Expo SDK 57 |
-| Language | TypeScript 6 |
-| Navigation | React Navigation v7 (Stack + Drawer + BottomTabs) |
+| Language | TypeScript |
+| Navigation | React Navigation v7 |
 | State management | Zustand 5 |
 | Auth | `@react-native-google-signin/google-signin` |
-| Token storage | `expo-secure-store` |
-| Video player | `react-native-youtube-iframe` (embedded WebView) |
-| Animations | React Native Reanimated 4 + Gesture Handler |
-| Background audio | Custom native `AudioForegroundService` (Kotlin) |
+| Secure token storage | `expo-secure-store` |
+| Video player | `react-native-youtube-iframe` (WebView) |
+| Animations | Reanimated 4 + Gesture Handler |
+| Background audio | Custom Kotlin `AudioForegroundService` |
 | Lock screen controls | Android `MediaSession` + `MediaStyle` notification |
-| Native module | `expo-pip` (custom Expo module for PiP + playback state bridge) |
-| Build system | Gradle (Android) |
+| Native module bridge | Custom `expo-pip` Expo module |
+| Build system | Gradle |
 
-### Infrastructure
+### Infrastructure (Target Microservices)
 
-| Component | Technology |
-|-----------|-----------|
-| Containerization | Docker + Docker Compose |
-| Reverse proxy | Nginx |
-| Database | PostgreSQL 16 (Alpine Docker image) |
-| TLS (production) | Let's Encrypt via Caddy or AWS ALB |
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| Message broker | RabbitMQ | 3.x |
+| In-memory cache | Redis | Latest Alpine |
+| Relational DB | PostgreSQL | 16 Alpine |
+| API Gateway | Nginx | Alpine |
 
 ---
 
@@ -141,71 +280,73 @@ Every user watches videos from the **same admin-curated set of channels**. The s
 
 ```
 quiet-feed/
-├── .env.example              # Template for all required environment variables
-├── .env                      # Your actual secrets (never commit this!)
-├── docker-compose.yml        # Full stack: db + server + web (nginx)
-├── DEPLOY.md                 # Legacy deployment notes
+├── .env.example              # All required env vars — copy to .env and fill in
+├── .env                      # Your secrets — NEVER commit this file
+├── docker-compose.yml        # Target microservices stack (for DevOps reference)
 │
-├── source/                   # React web frontend (SPA)
-│   ├── Dockerfile            # Builds SPA with Vite, serves via nginx
+├── source/                   # React Web Frontend (SPA)
 │   ├── src/
-│   │   ├── App.tsx           # Root component, routing
-│   │   ├── store.ts          # Zustand global state + all API calls
+│   │   ├── App.tsx           # Root component, auth gate, view routing
+│   │   ├── store.ts          # Zustand store — all API calls + global state
 │   │   ├── index.css         # All styles (dark theme)
-│   │   ├── components/       # Player, Shell, Auth, Feed, etc.
+│   │   ├── components/       # Player, Shell, Auth, Feed UI components
 │   │   └── lib/              # YouTube helpers, format utilities, progress logic
-│   └── vite.config.ts
-│
-├── server/                   # Node.js + Express API backend
-│   ├── Dockerfile
-│   ├── src/
-│   │   ├── index.ts          # App entry point, Express setup
-│   │   ├── env.ts            # Zod-validated environment config (fails fast)
-│   │   ├── auth/             # Google OAuth verification, JWT session middleware
-│   │   ├── db/               # Postgres pool, schema migrations (schema.sql)
-│   │   ├── routes/           # channels.ts, content.ts, progress.ts
-│   │   ├── repos/            # Data access layer (SQL queries)
-│   │   ├── youtube/          # YouTube Data API v3 client + cache logic
-│   │   └── worker/           # Background refresh worker
+│   ├── vite.config.ts        # Vite config — must include /api proxy for local dev
 │   └── package.json
 │
-├── mobile-rn/                # React Native + Expo Android/iOS app
-│   ├── app.config.ts         # Expo app configuration (name, package, plugins)
+├── server/                   # Node.js + Express API Backend (monolith — runs today)
+│   ├── src/
+│   │   ├── index.ts          # Express app entrypoint — mounts all routers
+│   │   ├── env.ts            # Zod-validated env config — fails fast if misconfigured
+│   │   ├── auth/             # Google ID token verify, JWT session middleware
+│   │   ├── db/
+│   │   │   ├── schema.sql    # PostgreSQL schema (idempotent, runs on every boot)
+│   │   │   ├── migrate.ts    # Runs schema.sql against the connected DB
+│   │   │   └── pool.ts       # pg connection pool
+│   │   ├── routes/           # channels.ts, content.ts, progress.ts
+│   │   ├── repos/            # SQL query functions (data access layer)
+│   │   ├── youtube/          # YouTube Data API v3 client + Postgres cache
+│   │   └── worker/           # Background refresh worker (setInterval)
+│   └── package.json
+│
+├── services/                 # Microservices (work in progress — not yet runnable)
+│   ├── content/              # content_service: YouTube proxy + cache
+│   └── worker/               # worker_service: async refresh consumer
+│
+├── mobile-rn/                # React Native Android App
+│   ├── app.config.ts         # Expo config (app name, package ID, plugins)
 │   ├── App.tsx               # Root component
-│   ├── android/              # Native Android project (Gradle, Kotlin)
+│   ├── android/              # Native Android project (Gradle + Kotlin)
 │   │   └── app/src/main/java/app/quietfeed/
 │   │       └── MainActivity.kt  # AudioForegroundService, MediaSession, wakelock
-│   ├── modules/
-│   │   └── expo-pip/         # Custom native Expo module (PiP + playback bridge)
-│   ├── plugins/
-│   │   ├── withBackgroundAudio.js  # Expo config plugin: injects foreground service
-│   │   └── withReleaseSigning.js   # Expo config plugin: APK signing config
+│   ├── modules/expo-pip/     # Custom Expo module: playback state bridge
+│   ├── plugins/              # Expo config plugins (background audio, signing)
 │   └── src/
 │       ├── screens/          # LoginScreen, FeedScreen, PlaylistsScreen, etc.
 │       ├── components/       # PlayerOverlay, VideoCard, ChannelDrawer
 │       ├── navigation/       # Stack + Drawer + BottomTabs setup
 │       ├── lib/              # api.ts, auth.ts, progress.ts, format.ts
-│       ├── store.ts          # Zustand store (full app state + server sync)
+│       ├── store.ts          # Zustand store
 │       └── theme.ts          # Color palette + spacing tokens
 │
 └── deploy/
-    └── nginx.conf            # Nginx config: serves SPA, proxies /api to server
+    └── nginx.conf            # Nginx: static SPA files + /api proxy rule
 ```
 
 ---
 
 ## API Reference
 
-All endpoints live under `/api`. Authentication is via an HTTP-only session cookie set by `/api/auth/google`.
+All endpoints are under `/api`. Authentication uses an HTTP-only session cookie set by `/api/auth/google`.
 
 | Method | Path | Auth Required | Description |
 |--------|------|--------------|-------------|
 | `GET` | `/api/health` | None | Health check → `{ ok: true }` |
 | `POST` | `/api/auth/google` | None | Verify Google ID token, create session |
-| `GET` | `/api/auth/me` | None | Current logged-in user or `null` |
+| `GET` | `/api/auth/me` | None | Current user or `null` |
 | `POST` | `/api/auth/logout` | User | Clear session cookie |
-| `GET` | `/api/channels` | User | List all admin-curated channels |
-| `POST` | `/api/channels` | **Admin** | Add a channel (by `@handle`, URL, or `UC…` ID) |
+| `GET` | `/api/channels` | User | List admin-curated channels |
+| `POST` | `/api/channels` | **Admin** | Add channel by `@handle`, URL, or `UC…` ID |
 | `DELETE` | `/api/channels/:id` | **Admin** | Remove a channel |
 | `GET` | `/api/channels/:id/uploads` | User | Paginated video list (cached) |
 | `GET` | `/api/channels/:id/playlists` | User | Paginated playlist list (cached) |
@@ -218,307 +359,304 @@ All endpoints live under `/api`. Authentication is via an HTTP-only session cook
 
 ## Prerequisites
 
-Before you start, install and set up the following. Each item includes what you need to do.
+Install everything below before running the project. Verify each tool using the command shown.
 
-### For Running Locally (Web App Only)
+### For Running the Web + API Locally
 
-| Tool | Version | How to Install |
-|------|---------|---------------|
-| **Docker Desktop** | Latest | https://docs.docker.com/get-docker/ |
-| **Docker Compose** | v2+ (bundled with Docker Desktop) | Included with Docker Desktop |
-| **Google Cloud account** | — | https://console.cloud.google.com |
-| **YouTube Data API v3 key** | — | See step below |
-| **Google OAuth Web Client ID** | — | See step below |
+| Tool | Min Version | Install | Verify Command |
+|------|------------|---------|----------------|
+| **Node.js** | 20 LTS | https://nodejs.org | `node -v` → `v20.x.x` |
+| **npm** | 10+ | Bundled with Node.js | `npm -v` |
+| **PostgreSQL** | 16 | Mac: `brew install postgresql@16`<br>Ubuntu: `sudo apt install postgresql-16` | `psql --version` |
+| **Git** | Any | Mac: `brew install git`<br>Ubuntu: `sudo apt install git` | `git --version` |
 
-### For Building the Android App (Additional)
+### Additionally — For Building the Android APK
 
-| Tool | Version | How to Install |
-|------|---------|---------------|
-| **Node.js** | 20+ | https://nodejs.org or `brew install node` |
-| **JDK** (Java 17+) | 17 | `brew install --cask temurin` (Mac) or `sudo apt install default-jdk` |
-| **Android Studio** | Latest | https://developer.android.com/studio |
-| **Android SDK** | API 36 | Installed via Android Studio → SDK Manager |
-| **Gradle** | Bundled | Included in `/mobile-rn/android/` |
+| Tool | Min Version | Install | Verify Command |
+|------|------------|---------|----------------|
+| **JDK** | 17 | Mac: `brew install --cask temurin@17`<br>Ubuntu: `sudo apt install openjdk-17-jdk` | `java -version` |
+| **Android Studio** | Latest | https://developer.android.com/studio | Open the app |
+| **Android SDK API** | 36 | Android Studio → SDK Manager → SDK Platforms | — |
+| **Android Build Tools** | 36.0.0 | Android Studio → SDK Manager → SDK Tools | — |
 
 ---
 
-### One-Time Google Cloud Setup
+## Environment Variables Reference
 
-You need two things from Google Cloud. Do this once.
+### API Server — `server/.env`
 
-#### Step A — YouTube Data API Key
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NODE_ENV` | No | `development` | `development` or `production` |
+| `PORT` | No | `3000` | Port the API server listens on |
+| `DATABASE_URL` | **Yes** | — | Full Postgres connection string, e.g. `postgres://user:pass@localhost:5432/quietfeed` |
+| `GOOGLE_CLIENT_ID` | **Yes** | — | Google OAuth 2.0 Web Client ID |
+| `SESSION_SECRET` | **Yes** | — | JWT signing secret (min 16 chars; use `openssl rand -hex 32`) |
+| `SESSION_TTL_DAYS` | No | `30` | Login session validity in days |
+| `ADMIN_EMAILS` | No | `` | Comma-separated emails that get admin role on login |
+| `YOUTUBE_API_KEY` | **Yes** | — | YouTube Data API v3 key (server-side only, never sent to browser) |
+| `CACHE_TTL_MINUTES` | No | `60` | How long YouTube responses are considered fresh |
+| `REFRESH_INTERVAL_MINUTES` | No | `30` | How often the background worker re-warms cache (0 = disabled) |
+| `COOKIE_SECURE` | No | `false` | Set to `true` when running behind HTTPS |
+| `CORS_ORIGIN` | No | `` | Allowed CORS origins (comma-separated); leave blank when on same origin |
 
-1. Go to https://console.cloud.google.com
-2. Create a new project (top-left dropdown → **New Project**)
-3. In the left sidebar → **APIs & Services** → **Library**
-4. Search **YouTube Data API v3** → Click it → Click **Enable**
-5. Go to **APIs & Services** → **Credentials** → **+ Create Credentials** → **API key**
-6. Copy the key (starts with `AIza...`) — this is your `YOUTUBE_API_KEY`
-7. *(Optional but recommended)* Click **Restrict Key** → Application restrictions → IP addresses → add your server's IP
+### Web Frontend — `source/.env`
 
-#### Step B — Google OAuth Web Client ID
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_GOOGLE_CLIENT_ID` | **Yes** | Google OAuth Web Client ID (inlined at build time by Vite) |
 
-1. Still in Google Cloud → **APIs & Services** → **Credentials**
-2. Click **+ Create Credentials** → **OAuth client ID**
-3. Choose **Web application**
-4. Under **Authorized JavaScript origins**, add:
-   - `http://localhost:8080` (for local development)
-   - Your production domain, e.g. `https://yourdomain.com` (when deploying)
-5. Click **Create**
-6. Copy the **Client ID** (looks like `123456789-abc123.apps.googleusercontent.com`) — this is your `GOOGLE_CLIENT_ID`
+### Android App — `mobile-rn/.env`
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `EXPO_PUBLIC_API_URL` | **Yes** | Backend base URL, e.g. `http://192.168.1.100:3000` (local) or `https://yourdomain.com` |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | **Yes** | Same Google OAuth Web Client ID as the server |
 
 ---
 
-## Step-by-Step: Run Locally
+## One-Time Google Cloud Setup
 
-These instructions assume you have Docker Desktop installed and running.
+Do this once. You need a YouTube API key and a Google OAuth Client ID.
 
-### Step 1 — Clone the Repository
+### Step A — Create a Google Cloud Project
 
+1. Open https://console.cloud.google.com
+2. Top-left project dropdown → **New Project** → name it (e.g. `quiet-feed`) → **Create**
+3. Confirm the new project is selected in the dropdown
+
+### Step B — Enable YouTube Data API v3
+
+1. Left sidebar → **APIs & Services** → **Library**
+2. Search `YouTube Data API v3` → click it → click **Enable**
+
+### Step C — Create the YouTube API Key
+
+1. **APIs & Services** → **Credentials** → **+ Create Credentials** → **API key**
+2. Copy the key (starts with `AIza...`) — this is `YOUTUBE_API_KEY`
+3. *(Recommended)* Click **Restrict Key** → IP addresses → add your server's IP
+
+### Step D — Create the OAuth 2.0 Web Client ID
+
+1. **Credentials** → **+ Create Credentials** → **OAuth client ID** → **Web application**
+2. Under **Authorized JavaScript origins**, add:
+   - `http://localhost:5173` ← Vite dev server
+   - `http://localhost:8080` ← if testing production build locally
+3. **Create** → copy the Client ID (`123456-abc.apps.googleusercontent.com`) — this is `GOOGLE_CLIENT_ID`
+
+---
+
+## Running the Full Stack Locally — No Containers
+
+Run everything as **native processes** directly on your machine. No Docker required. This is the definitive guide for understanding how each service runs independently.
+
+> Complete [Prerequisites](#prerequisites) and [Google Cloud Setup](#one-time-google-cloud-setup) before starting.
+
+---
+
+### Part 1 — Start PostgreSQL
+
+**1.1 — Start the service**
+
+macOS:
 ```bash
-git clone https://github.com/YOUR_USERNAME/quiet-feed.git
-cd quiet-feed
-git checkout feature/microservices-migration
+brew services start postgresql@16
 ```
 
-### Step 2 — Create Your Environment File
-
+Ubuntu:
 ```bash
-cp .env.example .env
+sudo systemctl start postgresql
+sudo systemctl enable postgresql    # auto-start on reboot
 ```
 
-Now open `.env` in any text editor and fill in every value:
+**1.2 — Confirm it's running**
+```bash
+pg_isready
+# Expected: /tmp:5432 - accepting connections
+```
+
+**1.3 — Create the database user and database**
 
 ```bash
-# Database credentials (you can use any values for local setup)
-POSTGRES_USER=quietfeed
-POSTGRES_PASSWORD=my-super-secret-password-123
-POSTGRES_DB=quietfeed
+psql postgres
+```
 
-# From Google Cloud — your OAuth Web Client ID
-GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
+Inside the psql shell, run:
+```sql
+CREATE USER quietfeed WITH PASSWORD 'choose-a-strong-password';
+CREATE DATABASE quietfeed OWNER quietfeed;
+GRANT ALL PRIVILEGES ON DATABASE quietfeed TO quietfeed;
+\q
+```
 
-# Your own email — this account gets admin rights to manage channels
-ADMIN_EMAILS=you@gmail.com
+**1.4 — Test the connection**
+```bash
+psql -U quietfeed -d quietfeed -h localhost -c "SELECT 1;"
+# Expected: (1 row)
+```
 
-# Generate a random secret: run this in terminal → openssl rand -hex 32
-SESSION_SECRET=paste-the-64-char-hex-output-here
+PostgreSQL is ready. Leave it running.
+
+---
+
+### Part 2 — Configure the API Server
+
+**2.1 — Install dependencies**
+```bash
+cd /path/to/quiet-feed/server
+npm install
+```
+
+**2.2 — Generate a session secret**
+```bash
+openssl rand -hex 32
+# Save the output — you'll use it as SESSION_SECRET
+```
+
+**2.3 — Create `server/.env`**
+
+Create a file called `.env` inside the `server/` directory:
+```
+NODE_ENV=development
+PORT=3000
+DATABASE_URL=postgres://quietfeed:choose-a-strong-password@localhost:5432/quietfeed
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+SESSION_SECRET=paste-the-64-char-hex-from-step-2.2-here
 SESSION_TTL_DAYS=30
-
-# From Google Cloud — your YouTube Data API v3 key
-YOUTUBE_API_KEY=AIzaSyABC123...
-
-# Cache settings (you can leave these as-is)
+ADMIN_EMAILS=your-email@gmail.com
+YOUTUBE_API_KEY=AIzaSy-your-youtube-key
 CACHE_TTL_MINUTES=60
 REFRESH_INTERVAL_MINUTES=30
-
-# Leave false for local HTTP
 COOKIE_SECURE=false
-
-# Leave blank — frontend and API are on the same origin
-CORS_ORIGIN=
-
-# The local port the web app will be available on
-WEB_PORT=8080
+CORS_ORIGIN=http://localhost:5173
 ```
 
-> **Tip:** Generate the `SESSION_SECRET` by running: `openssl rand -hex 32`
+Replace every placeholder with real values.
 
-### Step 3 — Start the Full Stack
+**2.4 — Start the server**
+```bash
+npm run dev
+```
+
+Expected output:
+```
+[server] listening on :3000 (development)
+[worker] refresh worker started, interval=30min
+```
+
+> The server runs `schema.sql` automatically on startup. All DB tables are created fresh on first boot.
+
+**2.5 — Verify it's working**
+
+Open a new terminal and run:
+```bash
+curl http://localhost:3000/api/health
+# Expected: {"ok":true,"ts":1700000000000}
+```
+
+Keep this terminal running.
+
+---
+
+### Part 3 — Configure and Start the Web Frontend
+
+**3.1 — Install dependencies**
+
+Open another new terminal:
+```bash
+cd /path/to/quiet-feed/source
+npm install
+```
+
+**3.2 — Create `source/.env`**
 
 ```bash
-docker compose up -d --build
+echo 'VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com' > .env
 ```
 
-This command will:
-- Pull the PostgreSQL 16 Docker image
-- Build the Node.js server Docker image
-- Build the React SPA with Vite and package it inside an nginx Docker image
-- Start all three containers and connect them on an internal Docker network
-- Run automatic database schema migrations on first start
+Replace with your actual Client ID.
 
-The first build takes ~2-5 minutes. Subsequent starts are much faster.
+**3.3 — Verify the API proxy is configured**
 
-### Step 4 — Verify Everything Is Running
+Open `source/vite.config.ts`. It should contain a `server.proxy` section:
+```typescript
+export default defineConfig({
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3000'
+    }
+  }
+})
+```
 
+If this block is missing, add it. Without it, browser API calls will fail — they'll hit the Vite dev server on port 5173 instead of the Node server on port 3000.
+
+**3.4 — Start the frontend dev server**
 ```bash
-docker compose ps
+npm run dev
 ```
 
-You should see three services all with status `Up`:
+Expected output:
 ```
-NAME              STATUS
-quiet-feed-db-1     Up (healthy)
-quiet-feed-server-1  Up
-quiet-feed-web-1    Up
+  VITE v5.x.x  ready in 300 ms
+  ➜  Local:   http://localhost:5173/
 ```
 
-Check the health endpoint:
-```bash
-curl http://localhost:8080/api/health
-# Expected output: {"ok":true,"ts":1234567890}
-```
+**3.5 — Open the app in your browser**
 
-### Step 5 — Open the App
-
-Open your browser and go to: **http://localhost:8080**
+Go to: **http://localhost:5173**
 
 1. Click **Sign in with Google**
-2. Choose the Google account whose email matches `ADMIN_EMAILS` in your `.env`
-3. You'll be logged in as an **Admin**
-4. Go to **Settings** → **Channels** → Add a YouTube channel by its `@handle` (e.g. `@mkbhd`) or channel URL
+2. Sign in with the email listed in `ADMIN_EMAILS` in your `server/.env`
+3. You now have admin access
+4. Use the channel management UI to add YouTube channels by `@handle`
 
-### Step 6 — Stop the App
+Keep this terminal running.
+
+---
+
+### Part 4 — Confirm All Three Processes Are Running
+
+| # | Process | Terminal | Port | How to Check |
+|---|---------|----------|------|-------------|
+| 1 | PostgreSQL | (system service) | 5432 | `pg_isready` → "accepting connections" |
+| 2 | Node.js API server | Terminal 1 | 3000 | `curl localhost:3000/api/health` → `{"ok":true}` |
+| 3 | Vite dev server | Terminal 2 | 5173 | Browser at `http://localhost:5173` shows the app |
+
+All three must be running. If any one of them stops, the app will stop working.
+
+---
+
+### Stopping Everything
 
 ```bash
-docker compose down
-```
+# Terminal 1 — stop Node server:   Ctrl+C
+# Terminal 2 — stop Vite server:   Ctrl+C
 
-Your database data is preserved in a Docker volume (`dbdata`). To also delete the database:
-```bash
-docker compose down -v
+# Stop PostgreSQL:
+brew services stop postgresql@16       # macOS
+sudo systemctl stop postgresql         # Ubuntu
 ```
 
 ---
 
-## Step-by-Step: Deploy on a Cloud Server (Ubuntu/EC2)
+## Building the Android APK
 
-### Step 1 — Launch an Ubuntu Server
+### Step 1 — Configure Android Studio
 
-- On AWS EC2, choose **Ubuntu 22.04 or 24.04 LTS**
-- Instance type: **t3.small** is enough to start
-- Security Group inbound rules:
-  - Port **22** (SSH) — from your IP only
-  - Port **80** (HTTP) — from anywhere (`0.0.0.0/0`)
-  - Port **443** (HTTPS) — from anywhere (for TLS later)
+1. Open **Android Studio**
+2. **Tools** → **SDK Manager**
+3. **SDK Platforms** tab → tick **Android API 36** → Apply
+4. **SDK Tools** tab → tick **Android SDK Build-Tools 36.0.0** → Apply
+5. Let it download and install
 
-### Step 2 — SSH Into Your Server
+### Step 2 — Export Shell Environment Variables
 
-```bash
-ssh -i your-key.pem ubuntu@YOUR_SERVER_IP
-```
-
-### Step 3 — Install Docker
+Add to your `~/.zshrc` (macOS) or `~/.bashrc` (Ubuntu):
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y docker.io docker-compose-plugin
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-Verify:
-```bash
-docker --version
-docker compose version
-```
-
-### Step 4 — Get the Code on the Server
-
-**Option A — Git clone:**
-```bash
-git clone https://github.com/YOUR_USERNAME/quiet-feed.git
-cd quiet-feed
-git checkout feature/microservices-migration
-```
-
-**Option B — SCP from your Mac:**
-```bash
-scp -i your-key.pem -r /path/to/quiet-feed ubuntu@YOUR_SERVER_IP:~/quiet-feed
-```
-
-### Step 5 — Configure Environment
-
-```bash
-cd ~/quiet-feed
-cp .env.example .env
-nano .env
-```
-
-Fill in all values exactly as described in [Step 2 of the local guide](#step-2--create-your-environment-file), with these differences for production:
-
-```bash
-COOKIE_SECURE=true          # Must be true when serving over HTTPS
-WEB_PORT=80                 # Serve directly on port 80
-CORS_ORIGIN=                # Leave blank — same origin
-```
-
-Also add your production domain to **Authorized JavaScript origins** in Google Cloud Console (e.g., `https://yourdomain.com`).
-
-### Step 6 — Start the App
-
-```bash
-docker compose up -d --build
-```
-
-Check it's running:
-```bash
-docker compose ps
-curl http://YOUR_SERVER_IP/api/health
-```
-
-Visit `http://YOUR_SERVER_IP` in your browser.
-
-### Step 7 — Set Up HTTPS with Caddy (Recommended)
-
-Caddy automatically provisions Let's Encrypt TLS certificates. Your server must have a real domain name pointing to it.
-
-**Install Caddy:**
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
-```
-
-**Edit the Caddyfile:**
-```bash
-sudo nano /etc/caddy/Caddyfile
-```
-
-Replace contents with:
-```
-yourdomain.com {
-    reverse_proxy localhost:8080
-}
-```
-
-**Restart Caddy:**
-```bash
-sudo systemctl restart caddy
-```
-
-Caddy will automatically get and renew a TLS certificate. Your app is now live at `https://yourdomain.com`.
-
-Finally, update your `.env`:
-```bash
-nano .env
-# Set: COOKIE_SECURE=true
-docker compose up -d --build  # restart to pick up changes
-```
-
----
-
-## Step-by-Step: Build the Android App
-
-### Step 1 — Install Prerequisites
-
-1. Install **Node.js 20+**: https://nodejs.org
-2. Install **JDK 17**: `brew install --cask temurin` (Mac) or from https://adoptium.net
-3. Install **Android Studio**: https://developer.android.com/studio
-4. In Android Studio → SDK Manager → Install:
-   - Android SDK Platform 36
-   - Android SDK Build-Tools 36.0.0
-   - NDK (Side by side) — any recent version
-
-### Step 2 — Set Up Environment Variables
-
-Add these to your shell profile (`~/.zshrc` or `~/.bash_profile`):
-
-```bash
-export ANDROID_HOME="$HOME/Library/Android/sdk"   # Mac path (adjust if on Linux)
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"  # Mac
+export ANDROID_HOME="$HOME/Library/Android/sdk"    # macOS path
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"  # macOS
 export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/tools:$ANDROID_HOME/platform-tools"
 ```
 
@@ -527,197 +665,190 @@ Apply:
 source ~/.zshrc
 ```
 
-### Step 3 — Configure the Mobile App
+Verify:
+```bash
+adb --version       # prints ADB version
+java -version       # prints Java 17+
+```
+
+### Step 3 — Configure `mobile-rn/.env`
 
 ```bash
-cd mobile-rn
+cd /path/to/quiet-feed/mobile-rn
 cp .env.example .env
-nano .env
 ```
 
-Fill in:
-```bash
-# Your deployed backend URL (no trailing slash)
-EXPO_PUBLIC_API_URL=https://yourdomain.com
-
-# Same Google OAuth Web Client ID as the server
-EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=123456789-abc.apps.googleusercontent.com
+Edit `.env`:
+```
+EXPO_PUBLIC_API_URL=http://YOUR_MACHINE_LOCAL_IP:3000
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
 
-### Step 4 — Install JavaScript Dependencies
+> Use your machine's local network IP (not `localhost`). Find it:
+> - macOS: `ipconfig getifaddr en0`
+> - Ubuntu: `hostname -I | awk '{print $1}'`
+
+### Step 4 — Install JS Dependencies
 
 ```bash
-cd mobile-rn
+cd /path/to/quiet-feed/mobile-rn
 npm install
 ```
 
-### Step 5 — Add SHA-1 Fingerprint to Google Cloud (for Google Sign-In)
+### Step 5 — Register Android SHA-1 with Google (One-Time)
 
-Get the SHA-1 of your release keystore:
+Google Sign-In on Android requires the release keystore's SHA-1 fingerprint to be registered in Google Cloud.
+
 ```bash
-keytool -list -v -keystore credentials/quietfeed-release.keystore -alias quietfeed -storepass YOUR_KEYSTORE_PASS | grep SHA1
+keytool -list -v \
+  -keystore credentials/quietfeed-release.keystore \
+  -alias quietfeed \
+  -storepass YOUR_KEYSTORE_PASS \
+  | grep SHA1
 ```
 
-Go to **Google Cloud Console** → **APIs & Services** → **Credentials** → your OAuth Client → **Add Android app** → enter:
-- Package name: `app.quietfeed`
-- SHA-1 fingerprint: the value from above
+Take the `SHA1:` value and:
+1. Go to **Google Cloud Console** → **APIs & Services** → **Credentials**
+2. Click your OAuth Client ID → **Add Android app**
+3. Package name: `app.quietfeed`
+4. SHA-1: paste the fingerprint
+5. **Save**
 
 ### Step 6 — Build the Release APK
 
 ```bash
-cd android
+cd /path/to/quiet-feed/mobile-rn/android
 ./gradlew assembleRelease
 ```
 
-The APK will be at:
+First build: 5–10 minutes (downloads Gradle + Android dependencies).
+Subsequent builds: 1–3 minutes.
+
+APK location:
 ```
-android/app/build/outputs/apk/release/app-release.apk
+mobile-rn/android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Install on a connected Android device:
+### Step 7 — Install on an Android Device
+
+Connect device via USB, enable **USB Debugging** (Developer Options), then:
 ```bash
-adb install -r android/app/build/outputs/apk/release/app-release.apk
+adb install -r mobile-rn/android/app/build/outputs/apk/release/app-release.apk
 ```
-
----
-
-## Environment Variables Reference
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `POSTGRES_USER` | Yes | `quietfeed` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | **Yes** | — | PostgreSQL password (use a strong random value) |
-| `POSTGRES_DB` | Yes | `quietfeed` | PostgreSQL database name |
-| `GOOGLE_CLIENT_ID` | **Yes** | — | Google OAuth 2.0 Web Client ID |
-| `ADMIN_EMAILS` | Yes | — | Comma-separated list of admin email addresses |
-| `SESSION_SECRET` | **Yes** | — | Secret for signing JWT session cookies (min 16 chars; use 32+ hex chars) |
-| `SESSION_TTL_DAYS` | No | `30` | How many days a login session stays valid |
-| `YOUTUBE_API_KEY` | **Yes** | — | YouTube Data API v3 server-side key |
-| `CACHE_TTL_MINUTES` | No | `60` | How long cached YouTube responses are considered fresh |
-| `REFRESH_INTERVAL_MINUTES` | No | `30` | How often the background worker re-warms the cache (0 = disabled) |
-| `COOKIE_SECURE` | No | `false` | Set to `true` when serving over HTTPS |
-| `CORS_ORIGIN` | No | `` (empty) | Allowed CORS origin(s); leave blank when frontend and API share an origin |
-| `WEB_PORT` | No | `8080` | Host port the nginx web container is published on |
-
-**Mobile app only (`mobile-rn/.env`):**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `EXPO_PUBLIC_API_URL` | **Yes** | Base URL of the deployed backend (no trailing slash) |
-| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | **Yes** | Same Google OAuth Web Client ID as the server |
 
 ---
 
 ## Useful Commands
 
-### Docker
-
+### API Server
 ```bash
-# Start everything in the background
-docker compose up -d --build
+cd server
+npm run dev          # dev mode with hot-reload (uses tsx watch)
+npm run build        # compile TypeScript → dist/
+npm start            # run compiled build (production)
+npm run typecheck    # type-check only, no build output
+```
 
-# View live logs for all services
-docker compose logs -f
+### Web Frontend
+```bash
+cd source
+npm run dev          # Vite dev server with HMR
+npm run build        # production build → dist/
+npm run preview      # serve production build locally
+npm run typecheck    # type-check only
+```
 
-# View logs for a specific service
-docker compose logs -f server
-docker compose logs -f web
+### PostgreSQL
+```bash
+# Open DB shell
+psql -U quietfeed -d quietfeed -h localhost
 
-# Restart a single service
-docker compose restart server
+# Show tables
+\dt
 
-# Stop everything (keep data)
-docker compose down
+# Manually run DB migration
+cd server && npx tsx src/db/migrate.ts
 
-# Stop everything AND delete the database volume
-docker compose down -v
-
-# Check running containers
-docker compose ps
-
-# Back up the database
-docker compose exec db pg_dump -U quietfeed quietfeed > backup.sql
+# Export a full backup
+pg_dump -U quietfeed -d quietfeed -h localhost > backup-$(date +%Y%m%d).sql
 
 # Restore from backup
-cat backup.sql | docker compose exec -T db psql -U quietfeed quietfeed
+psql -U quietfeed -d quietfeed -h localhost < backup.sql
 ```
 
-### Android Build
-
+### Android
 ```bash
-# Build release APK (from mobile-rn/android/)
-./gradlew assembleRelease
+# Release APK
+cd mobile-rn/android && ./gradlew assembleRelease
 
-# Clean build cache (if something is broken)
-./gradlew clean
+# Debug APK (no keystore needed)
+cd mobile-rn/android && ./gradlew assembleDebug
 
-# Install APK on connected device via ADB
+# Wipe build cache
+cd mobile-rn/android && ./gradlew clean
+
+# Install via ADB
 adb install -r app/build/outputs/apk/release/app-release.apk
 
-# View connected devices
+# List connected devices
 adb devices
-```
 
-### Development (No Docker)
-
-```bash
-# Run the server in dev mode with hot reload
-cd server && npm install && npm run dev
-
-# Run the web frontend in dev mode
-cd source && npm install && npm run dev
-
-# Run the mobile app with Expo dev server
-cd mobile-rn && npm install && npx expo start
+# Device logs
+adb logcat | grep quietfeed
 ```
 
 ---
 
 ## Troubleshooting
 
-### "POSTGRES_PASSWORD is not set" error on startup
+### Server crashes immediately
 
-Make sure you copied `.env.example` to `.env` and filled in all required values.
-
+The server validates all env vars at startup. Run:
 ```bash
-cp .env.example .env
-nano .env   # fill in POSTGRES_PASSWORD, GOOGLE_CLIENT_ID, SESSION_SECRET, YOUTUBE_API_KEY
+cd server && npm run dev
+```
+Look for `[config] Invalid environment:` in output. It tells you exactly which variable is missing or wrong.
+
+### Google sign-in loops or fails in browser
+
+1. `VITE_GOOGLE_CLIENT_ID` in `source/.env` must exactly match the Client ID in Google Cloud Console.
+2. `http://localhost:5173` must be in **Authorized JavaScript origins** of your OAuth client.
+3. Clear browser cookies and try again.
+
+### "connection refused" on psql or server startup
+
+PostgreSQL is not running. Start it:
+```bash
+brew services start postgresql@16    # macOS
+sudo systemctl start postgresql      # Ubuntu
+```
+Then verify: `pg_isready`
+
+### API calls fail in the browser (404 or wrong response)
+
+The Vite proxy is not configured. Check `source/vite.config.ts` has:
+```typescript
+server: { proxy: { '/api': 'http://localhost:3000' } }
 ```
 
-### Can't sign in with Google (login loop)
+### YouTube API returns 403
 
-1. Check that `GOOGLE_CLIENT_ID` in `.env` exactly matches the Client ID in Google Cloud Console.
-2. Check that your URL (e.g. `http://localhost:8080`) is listed under **Authorized JavaScript origins** in the Google Cloud OAuth client.
-3. On HTTPS production: make sure `COOKIE_SECURE=true` is set.
+1. The API key must be enabled for **YouTube Data API v3** in Google Cloud.
+2. Check for API restrictions — server-side keys should use IP restrictions, not HTTP referrer.
+3. Check quota: Google Cloud → APIs & Services → Quotas. Free tier = 10,000 units/day.
 
-### Google Sign-In fails on Android
+### Android build fails — JAVA_HOME not set
 
-The SHA-1 fingerprint of your release keystore must be registered in Google Cloud:
-1. Get the SHA-1: `keytool -list -v -keystore credentials/quietfeed-release.keystore ...`
-2. Add it to your Android OAuth client in Google Cloud Console.
-
-### "Bad Gateway" or 502 errors
-
-The `web` nginx container can't reach the `server` container. Check server logs:
 ```bash
-docker compose logs server
-```
-A common cause is a missing or invalid environment variable causing the server to crash on startup. Look for "Invalid environment:" in the logs.
-
-### APK build fails with JAVA_HOME error
-
-Make sure Java 17+ is installed and the `JAVA_HOME` environment variable is set correctly:
-```bash
-echo $JAVA_HOME
-java -version
+echo $JAVA_HOME      # must print a valid JDK path
+java -version        # must be Java 17+
 ```
 
-### Videos don't load / YouTube API errors
+Add the `export JAVA_HOME=...` line to your shell profile and re-source it.
 
-Your `YOUTUBE_API_KEY` may be invalid, expired, or quota-exceeded. Check:
-1. The key is enabled for **YouTube Data API v3** in Google Cloud.
-2. The key doesn't have HTTP referrer restrictions (use IP or no restriction for server-side keys).
-3. Your project hasn't exceeded its daily quota (10,000 units/day on the free tier).
+### Google Sign-In on Android shows "developer error"
+
+Your release keystore's SHA-1 is not registered. See [Step 5 of Building the Android APK](#step-5--register-android-sha-1-with-google-one-time).
 
 ---
 
