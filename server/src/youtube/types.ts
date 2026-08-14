@@ -3,6 +3,7 @@ export interface Channel {
   title: string;
   thumb: string;
   uploads: string;
+  language?: string;
 }
 
 export interface Video {

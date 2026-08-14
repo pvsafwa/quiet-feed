@@ -1,10 +1,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../http/async';
-import { requireAuth } from '../auth/middleware';
-import { getProgress, saveProgress } from '../repos/progress';
+import { requireAuth, requireAdmin } from '../auth/middleware';
+import { getProgress, saveProgress, getAllUsersProgress } from '../repos/progress';
 
 export const progressRouter = Router();
+
+// Admin can retrieve progress across all users
+progressRouter.get(
+  '/admin/all',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    res.json({ progressByUser: await getAllUsersProgress() });
+  }),
+);
 
 // The whole per-user progress doc — fetched on load, saved (debounced) by the client.
 progressRouter.get(

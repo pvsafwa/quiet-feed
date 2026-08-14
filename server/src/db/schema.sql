@@ -20,10 +20,13 @@ CREATE TABLE IF NOT EXISTS channels (
   title       TEXT NOT NULL,
   thumb       TEXT NOT NULL DEFAULT '',
   uploads     TEXT NOT NULL,                    -- uploads playlist id (UU...)
+  language    TEXT NOT NULL DEFAULT 'English',
   added_by    UUID REFERENCES users(id) ON DELETE SET NULL,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'English';
 
 -- Generic JSON cache for YouTube responses, keyed by a stable cache key, with TTL.
 CREATE TABLE IF NOT EXISTS content_cache (

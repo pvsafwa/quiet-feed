@@ -8,6 +8,8 @@ import { RootNavigator } from './src/navigation';
 import { LoadingScreen } from './src/screens/LoadingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { Toast } from './src/components/Toast';
+import { PlayerOverlay } from './src/components/PlayerOverlay';
+import { UpdateModal } from './src/components/UpdateModal';
 import { colors } from './src/theme';
 
 const navTheme = {
@@ -15,11 +17,42 @@ const navTheme = {
   colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg2, text: colors.ink, border: colors.line, primary: colors.accent },
 };
 
+// Dev-only player harness: mounts PlayerOverlay directly with a fixed public video,
+// skipping sign-in, so the player can be debugged on an emulator. __DEV__ is compiled
+// false in release builds, so none of this can ever ship.
+const DEBUG_PLAYER = __DEV__ && process.env.EXPO_PUBLIC_DEBUG_PLAYER === '1';
+const DEBUG_VIDEO = {
+  id: 'M7lc1UVf-VE', // YouTube's official IFrame-API demo video (embeddable)
+  title: 'IFrame API demo', channelId: 'dev', channelTitle: 'YouTube Developers',
+  published: new Date().toISOString(), thumb: '', seconds: 200,
+} as any;
+
 export default function App() {
   const authReady = useStore(s => s.authReady);
   const user = useStore(s => s.user);
 
-  useEffect(() => { useStore.getState().init(); }, []);
+  useEffect(() => {
+    if (DEBUG_PLAYER) { useStore.getState().openPlayer(DEBUG_VIDEO); return; }
+    useStore.getState().init();
+
+    // Check for updates periodically every 4 hours while app is alive
+    const interval = setInterval(() => {
+      useStore.getState().checkAppUpdate(false);
+    }, 4 * 60 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  if (DEBUG_PLAYER) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
+        <SafeAreaProvider>
+          <StatusBar style="light" />
+          <PlayerOverlay />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -34,7 +67,10 @@ export default function App() {
             <RootNavigator />
           </NavigationContainer>
         )}
+        {/* Sits above the navigator so it can float over the feed (PiP), like the web app. */}
+        {user && <PlayerOverlay />}
         <Toast />
+        <UpdateModal />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

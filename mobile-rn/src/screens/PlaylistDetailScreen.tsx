@@ -59,8 +59,12 @@ export function PlaylistDetailScreen() {
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       data={here}
       keyExtractor={(v) => v.id}
+      initialNumToRender={8}
+      maxToRenderPerBatch={5}
+      windowSize={11}
+      removeClippedSubviews={true}
       ListHeaderComponent={header}
-      renderItem={({ item }) => <VideoCard v={item} onPress={() => navigation.navigate('Player', { video: item })} />}
+      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item)} />}
       ListEmptyComponent={<Text style={styles.empty}>{busy ? 'Loading…' : 'No playable videos here.'}</Text>}
     />
   );

@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { asyncHandler } from '../http/async';
 import { verifyGoogleIdToken } from './google';
 import { issueSession, clearSession } from './session';
-import { requireAuth } from './middleware';
-import { upsertUserFromGoogle, getUserById, publicUser } from '../repos/users';
+import { requireAuth, requireAdmin } from './middleware';
+import { upsertUserFromGoogle, getUserById, listAllUsers, publicUser } from '../repos/users';
 
 export const authRouter = Router();
 
@@ -44,6 +44,16 @@ authRouter.get(
     }
     const user = await getUserById(req.auth.uid);
     res.json({ user: user ? publicUser(user) : null });
+  }),
+);
+
+// Admin: List all registered users
+authRouter.get(
+  '/admin/users',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const users = await listAllUsers();
+    res.json({ users: users.map(publicUser) });
   }),
 );
 

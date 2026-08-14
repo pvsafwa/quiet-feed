@@ -18,7 +18,10 @@ channelsRouter.get(
   }),
 );
 
-const addBody = z.object({ input: z.string().min(1) });
+const addBody = z.object({
+  input: z.string().min(1),
+  language: z.string().optional(),
+});
 
 // Admin adds a channel by @handle / URL / UC id.
 channelsRouter.post(
@@ -32,7 +35,8 @@ channelsRouter.post(
     }
     try {
       const channel = await resolveChannel(parsed.data.input);
-      const row = await addChannel(channel, req.auth!.uid);
+      const language = parsed.data.language || 'English';
+      const row = await addChannel(channel, req.auth!.uid, language);
       res.status(201).json({ channel: row });
     } catch (e) {
       res.status(400).json({ error: friendly(e) });

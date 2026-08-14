@@ -1,0 +1,26 @@
+diff --git a/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js b/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js
+index 0be2dad..c3c8261 100644
+--- a/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js
++++ b/node_modules/react-native-youtube-iframe/lib/commonjs/YoutubeIframe.js
+@@ -50,11 +50,16 @@ const YoutubeIframe = (props, ref) => {
+     if (!playerReady) {
+       return;
+     }
+-    const message = JSON.stringify({
+-      eventName,
+-      meta
+-    });
+-    webViewRef.current.postMessage(message);
++    // PATCHED (quiet-feed): two stacked bugs made play/pause/mute no-ops.
++    // 1. react-native-webview's postMessage command is broken on Android under the New
++    //    Architecture — its document-dispatched MessageEvent never reaches the page.
++    //    Deliver via the injectJavaScript command instead (verified working — every
++    //    getter script already uses it), dispatched on `window`, where the page listens.
++    // 2. The hosted player page (iframe_v2.html) switches on the RAW string
++    //    ('playVideo' | 'pauseVideo' | 'muteVideo' | 'unMuteVideo'), not the JSON
++    //    envelope this function used to send — so send the bare eventName.
++    void meta;
++    webViewRef.current.injectJavaScript(`window.dispatchEvent(new MessageEvent('message', { data: ${JSON.stringify(eventName)} })); true;`);
+   }, [playerReady]);
+   (0, _react.useImperativeHandle)(ref, () => ({
+     getVideoUrl: () => {

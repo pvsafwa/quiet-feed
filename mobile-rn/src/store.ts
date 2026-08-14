@@ -1,14 +1,16 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Channel, Video, PlaylistMeta, Prog, Cursor } from './lib/types';
+import type { Channel, Video, PlaylistMeta, Prog, Cursor, AdminUserData } from './lib/types';
 import { api, ApiError, setAuthToken, type ApiUser } from './lib/api';
 import { googleSignIn, googleSignOut } from './lib/auth';
 import { normProg, emptyProg, registerPlaylist } from './lib/progress';
+import { checkForUpdate, snoozeUpdate, type AppRelease, CURRENT_APP_VERSION } from './lib/updater';
 
 const TOKEN_KEY = 'qf_token';
 const PREFS_KEY = 'qf_prefs';
 const VISIT_KEY = 'qf_lastvisit';
+const USER_CHANNELS_KEY = 'qf_user_selected_channels';
 
 export const SHORT_MAX = 60;
 
@@ -30,6 +32,7 @@ export interface Store {
   user: ApiUser | null;
   authReady: boolean;
   channels: Channel[];
+  selectedChannelIds: string[] | null; // null means all channels selected by default
   filter: string;
   search: string;
   hideShorts: boolean;
@@ -46,8 +49,16 @@ export interface Store {
   progV: number;
   banner: string | null;
   toastMsg: { msg: string; err: boolean; id: number } | null;
+  cur: Video | null;
+
+  // In-app update state
+  updateRelease: AppRelease | null;
+  updateModalOpen: boolean;
+  checkingUpdate: boolean;
 
   init(): Promise<void>;
+  openPlayer(v: Video): void;
+  closePlayer(): void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   afterLogin(): Promise<void>;
@@ -57,8 +68,11 @@ export interface Store {
   toast(msg: string, err?: boolean): void;
   showError(msg: string): void;
   hideError(): void;
-  addChannel(raw: string): Promise<void>;
+  addChannel(raw: string, language?: string): Promise<void>;
   removeChannel(id: string): Promise<void>;
+  toggleChannelSelection(id: string): void;
+  selectAllChannels(): void;
+  deselectAllChannels(): void;
   setFilter(f: string): void;
   setSearch(q: string): void;
   setHideShorts(v: boolean): void;
@@ -71,12 +85,19 @@ export interface Store {
   toggleMonitor(p: { id: string; title: string; channelTitle: string; channelId?: string; count: number }): Promise<void>;
   markAllWatched(vids: Video[]): void;
   resetProg(): void;
+
+  checkAppUpdate(manual?: boolean): Promise<void>;
+  dismissUpdateModal(): void;
+  snoozeAppUpdate(): Promise<void>;
+
+  fetchAdminDashboardData(): Promise<AdminUserData[]>;
 }
 
 export const useStore = create<Store>((set, get) => ({
   user: null,
   authReady: false,
   channels: [],
+  selectedChannelIds: null,
   filter: 'all',
   search: '',
   hideShorts: false,
@@ -93,15 +114,35 @@ export const useStore = create<Store>((set, get) => ({
   progV: 0,
   banner: null,
   toastMsg: null,
+  cur: null,
+
+  updateRelease: null,
+  updateModalOpen: false,
+  checkingUpdate: false,
+
+  openPlayer(v) { set({ cur: v }); },
+  closePlayer() { set({ cur: null }); get().commitProg(); },
 
   async init() {
-    // Load device-local prefs + previous-visit stamp (powers the "New" badge), then auth.
+    // Load device-local prefs + previous-visit stamp + user-selected channels
     try {
-      const [prefsRaw, visitRaw] = await Promise.all([AsyncStorage.getItem(PREFS_KEY), AsyncStorage.getItem(VISIT_KEY)]);
+      const [prefsRaw, visitRaw, userChansRaw] = await Promise.all([
+        AsyncStorage.getItem(PREFS_KEY),
+        AsyncStorage.getItem(VISIT_KEY),
+        AsyncStorage.getItem(USER_CHANNELS_KEY),
+      ]);
       const prefs = prefsRaw ? JSON.parse(prefsRaw) : {};
-      set({ hideShorts: !!prefs.hideShorts, autoRefreshMins: +prefs.autoRefreshMins || 0, lastSeen: Number(visitRaw) || 0 });
+      const selectedChannelIds = userChansRaw ? JSON.parse(userChansRaw) : null;
+
+      set({
+        hideShorts: !!prefs.hideShorts,
+        autoRefreshMins: +prefs.autoRefreshMins || 0,
+        lastSeen: Number(visitRaw) || 0,
+        selectedChannelIds,
+      });
       await AsyncStorage.setItem(VISIT_KEY, String(Date.now()));
     } catch { /* ignore */ }
+
     // Restore a saved session token if present.
     try {
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
@@ -115,6 +156,35 @@ export const useStore = create<Store>((set, get) => ({
       setAuthToken(null);
       set({ user: null, authReady: true });
     }
+
+    // Check for app updates non-blockingly
+    get().checkAppUpdate(false);
+  },
+
+  async checkAppUpdate(manual = false) {
+    if (get().checkingUpdate) return;
+    set({ checkingUpdate: true });
+    try {
+      const release = await checkForUpdate({ manual });
+      if (release) {
+        set({ updateRelease: release, updateModalOpen: true });
+      } else if (manual) {
+        get().toast(`You're up to date (v${CURRENT_APP_VERSION})`);
+      }
+    } catch (e) {
+      if (manual) get().toast('Could not check for updates', true);
+    } finally {
+      set({ checkingUpdate: false });
+    }
+  },
+
+  dismissUpdateModal() {
+    set({ updateModalOpen: false });
+  },
+
+  async snoozeAppUpdate() {
+    await snoozeUpdate(24);
+    set({ updateModalOpen: false });
   },
 
   async signIn() {
@@ -126,7 +196,6 @@ export const useStore = create<Store>((set, get) => ({
       get().toast(`Signed in as ${user.name || user.email}`);
       await get().afterLogin();
     } catch (e: any) {
-      // Don't surface the user-cancelled case as an error.
       if (e?.code === '-5' || /cancel/i.test(e?.message || '')) return;
       get().showError(errMsg(e));
     }
@@ -143,6 +212,7 @@ export const useStore = create<Store>((set, get) => ({
       pl: { items: [], cursors: {}, loaded: false },
       sel: null, selVideos: [], plDur: {}, plDurLoading: new Set<string>(),
       prog: emptyProg(), progV: get().progV + 1, filter: 'all', banner: null,
+      cur: null,
     });
     get().toast('Signed out');
   },
@@ -159,6 +229,32 @@ export const useStore = create<Store>((set, get) => ({
     catch (e) { get().showError(errMsg(e)); }
   },
 
+  toggleChannelSelection(id: string) {
+    const s = get();
+    let currentSelected = s.selectedChannelIds;
+    if (currentSelected === null) {
+      currentSelected = s.channels.map(c => c.id);
+    }
+    const exists = currentSelected.includes(id);
+    const nextSelected = exists
+      ? currentSelected.filter(x => x !== id)
+      : [...currentSelected, id];
+
+    set({ selectedChannelIds: nextSelected });
+    AsyncStorage.setItem(USER_CHANNELS_KEY, JSON.stringify(nextSelected)).catch(() => {});
+  },
+
+  selectAllChannels() {
+    const allIds = get().channels.map(c => c.id);
+    set({ selectedChannelIds: allIds });
+    AsyncStorage.setItem(USER_CHANNELS_KEY, JSON.stringify(allIds)).catch(() => {});
+  },
+
+  deselectAllChannels() {
+    set({ selectedChannelIds: [] });
+    AsyncStorage.setItem(USER_CHANNELS_KEY, JSON.stringify([])).catch(() => {});
+  },
+
   commitProg() { debouncedSaveProg(get().prog); set(s => ({ prog: { ...s.prog }, progV: s.progV + 1 })); },
   persistProg() { debouncedSaveProg(get().prog); },
 
@@ -166,12 +262,12 @@ export const useStore = create<Store>((set, get) => ({
   showError(msg) { console.error('[Quiet Feed]', msg); set({ banner: msg }); },
   hideError() { set({ banner: null }); },
 
-  async addChannel(raw) {
+  async addChannel(raw, language = 'English') {
     if (!raw.trim()) return;
     if (get().user?.role !== 'admin') { get().toast('Only admins can add channels', true); return; }
     get().hideError();
     try {
-      const { channel } = await api.addChannel(raw.trim());
+      const { channel } = await api.addChannel(raw.trim(), language);
       await get().loadChannels();
       get().toast('Added ' + channel.title);
       get().runVideos(true);
@@ -207,8 +303,9 @@ export const useStore = create<Store>((set, get) => ({
     set({ busy: true });
     if (reset) set({ vid: { buffers: {}, cursors: {}, loaded: false } });
     s = get();
-    const relevant = s.filter === 'all' ? s.channels : s.channels.filter(c => c.id === s.filter);
-    const chans = reset ? s.channels : relevant.filter(c => !s.vid.cursors[c.id]?.done);
+    const active = userActiveChannels(s);
+    const relevant = s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
+    const chans = reset ? active : relevant.filter(c => !s.vid.cursors[c.id]?.done);
     const buffers = { ...get().vid.buffers };
     const cursors = { ...get().vid.cursors };
     let err: any = null;
@@ -230,8 +327,9 @@ export const useStore = create<Store>((set, get) => ({
     set({ busy: true });
     if (reset) set({ pl: { items: [], cursors: {}, loaded: false } });
     s = get();
-    const relevant = s.filter === 'all' ? s.channels : s.channels.filter(c => c.id === s.filter);
-    const chans = reset ? s.channels : relevant.filter(c => !s.pl.cursors[c.id]?.done);
+    const active = userActiveChannels(s);
+    const relevant = s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
+    const chans = reset ? active : relevant.filter(c => !s.pl.cursors[c.id]?.done);
     let items = [...get().pl.items];
     const cursors = { ...get().pl.cursors };
     let err: any = null;
@@ -302,11 +400,39 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   resetProg() { set({ prog: emptyProg(), progV: get().progV + 1, plDur: {} }); debouncedSaveProg(get().prog); get().toast('Progress reset'); },
+
+  async fetchAdminDashboardData(): Promise<AdminUserData[]> {
+    const [usersRes, progRes] = await Promise.all([
+      api.adminUsers().catch(() => ({ users: [] })),
+      api.adminProgress().catch(() => ({ progressByUser: {} })),
+    ]);
+
+    const users = usersRes.users || [];
+    const progressMap: Record<string, any> = progRes.progressByUser || {};
+
+    return users.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      picture: u.picture,
+      role: u.role,
+      created_at: u.created_at || '',
+      last_login: u.last_login || '',
+      progress: progressMap[u.id] ? normProg(progressMap[u.id]) : emptyProg(),
+    }));
+  },
 }));
 
 // ---- derived selectors (pure) ----
+export function userActiveChannels(s: Store): Channel[] {
+  if (!s.selectedChannelIds) return s.channels;
+  return s.channels.filter(c => s.selectedChannelIds!.includes(c.id));
+}
+
 export function feedItems(s: Store): Video[] {
-  const all = ([] as Video[]).concat(...Object.values(s.vid.buffers));
+  const active = userActiveChannels(s);
+  const activeIds = new Set(active.map(c => c.id));
+  const all = ([] as Video[]).concat(...Object.values(s.vid.buffers)).filter(v => activeIds.has(v.channelId));
   const seen: Record<string, 1> = {}; let out: Video[] = [];
   for (const v of all) { if (!seen[v.id]) { seen[v.id] = 1; out.push(v); } }
   out.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
@@ -316,19 +442,46 @@ export function feedItems(s: Store): Video[] {
   if (q) out = out.filter(v => v.title.toLowerCase().includes(q) || (v.channelTitle || '').toLowerCase().includes(q));
   return out;
 }
+
 export function hasMoreVideos(s: Store): boolean {
-  const chans = s.filter === 'all' ? s.channels : s.channels.filter(c => c.id === s.filter);
+  const active = userActiveChannels(s);
+  const chans = s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
   return chans.some(c => !s.vid.cursors[c.id]?.done);
 }
+
 export function plList(s: Store): PlaylistMeta[] {
-  let list = s.pl.items.slice();
+  const active = userActiveChannels(s);
+  const activeIds = new Set(active.map(c => c.id));
+  let list = s.pl.items.filter(p => activeIds.has(p.channelId));
   if (s.filter !== 'all') list = list.filter(p => p.channelId === s.filter);
   const q = s.search.trim().toLowerCase();
   if (q) list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.channelTitle || '').toLowerCase().includes(q));
   list.sort((a, b) => (a.channelTitle || '').localeCompare(b.channelTitle || '') || (a.title || '').localeCompare(b.title || ''));
   return list;
 }
+
 export function hasMorePlaylists(s: Store): boolean {
-  const chans = s.filter === 'all' ? s.channels : s.channels.filter(c => c.id === s.filter);
+  const active = userActiveChannels(s);
+  const chans = s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
   return chans.some(c => !s.pl.cursors[c.id]?.done);
+}
+
+export function watchHistory(s: Store): Video[] {
+  const map = new Map<string, Video>();
+  Object.values(s.vid.buffers).forEach(list => list.forEach(v => map.set(v.id, v)));
+  s.selVideos.forEach(v => map.set(v.id, v));
+
+  const history: Video[] = [];
+  map.forEach(v => {
+    const p = s.prog.v[v.id];
+    if (p && (p.p > 0 || p.done)) history.push(v);
+  });
+
+  history.sort((a, b) => {
+    const ta = s.prog.v[a.id]?.t || 0;
+    const tb = s.prog.v[b.id]?.t || 0;
+    return tb - ta;
+  });
+
+  return history;
 }
