@@ -6,6 +6,7 @@ import { ytReady } from '../lib/ytapi';
 import { api } from '../lib/api';
 import { addWatch, setPos, markDone, isDone } from '../lib/progress';
 import { ago, views as fmtViews, fmtDur } from '../lib/format';
+import { bgPlay, bgPause, bgDestroy } from '../lib/bgaudio';
 import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause, ICheck, IGear, IRefresh } from './states';
 
 // Decorative equalizer shown when the video is hidden.
@@ -43,12 +44,18 @@ export function PlayerModal() {
   const tickRef = useRef<any>(null);
   const tcRef = useRef(0);
 
+  // Track whether the USER explicitly paused, vs YouTube auto-pausing
+  // when the tab goes to background. We only auto-resume if the user
+  // didn't ask for the pause.
+  const userPausedRef = useRef(false);
+  const autoResumeTimerRef = useRef<any>(null);
+
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [desc, setDesc] = useState<string>('');
   const [descOpen, setDescOpen] = useState(false);
-  const [videoOff, setVideoOff] = useState(true); // default: audio-only/hidden
+  const [videoOff, setVideoOff] = useState(true);
   const [playing, setPlaying] = useState(false);
-  const [pip, setPip] = useState(false); // default: full view on launch
+  const [pip, setPip] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -78,9 +85,7 @@ export function PlayerModal() {
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       const container = frameRef.current?.closest('.qf-window') || frameRef.current;
-      if (container?.requestFullscreen) {
-        container.requestFullscreen();
-      }
+      if (container?.requestFullscreen) container.requestFullscreen();
     } else {
       if (document.exitFullscreen) document.exitFullscreen();
     }
@@ -110,10 +115,7 @@ export function PlayerModal() {
     if (!cur) return;
     const url = `https://youtu.be/${cur.id}`;
     if (navigator.share) {
-      try {
-        await navigator.share({ title: cur.title, text: cur.title, url });
-        return;
-      } catch {}
+      try { await navigator.share({ title: cur.title, text: cur.title, url }); return; } catch {}
     }
     try {
       await navigator.clipboard.writeText(url);
@@ -126,8 +128,8 @@ export function PlayerModal() {
   const toggleWatched = () => {
     if (!cur) return;
     const p = useStore.getState().prog;
-    const done = isDone(p, cur.id);
-    if (done) {
+    const d = isDone(p, cur.id);
+    if (d) {
       const vRec = p.v[cur.id];
       if (vRec) vRec.done = 0;
       useStore.getState().commitProg();
@@ -154,18 +156,13 @@ export function PlayerModal() {
       const v = useStore.getState().cur;
       if (!p || !v) return;
       let t = 0, dur = 0;
-      try {
-        t = p.getCurrentTime() || 0;
-        dur = p.getDuration() || 0;
-      } catch { return; }
+      try { t = p.getCurrentTime() || 0; dur = p.getDuration() || 0; } catch { return; }
 
       const progStore = useStore.getState().prog;
       const duration = dur || v.seconds || totalDuration || 0;
 
       setCurrentTime(t);
-      if (duration > 0 && duration !== totalDuration) {
-        setTotalDuration(duration);
-      }
+      if (duration > 0 && duration !== totalDuration) setTotalDuration(duration);
 
       addWatch(progStore, v.id, 1, duration);
       setPos(progStore, v.id, t, duration);
@@ -178,9 +175,40 @@ export function PlayerModal() {
     }, 1000);
   }
 
-  // MediaSession integration for Lockscreen & Control Center audio widgets.
-  // Chrome on Android + iOS Safari will show lock-screen / notification controls
-  // when a MediaSession is active, allowing background audio to continue.
+  // ── User-initiated play / pause ──
+  const togglePlay = () => {
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      const S = window.YT?.PlayerState;
+      if (S && p.getPlayerState() === S.PLAYING) {
+        userPausedRef.current = true;   // mark: user asked for pause
+        p.pauseVideo();
+      } else {
+        userPausedRef.current = false;  // user asked to play
+        p.playVideo();
+      }
+    } catch {}
+  };
+
+  // ── Auto-resume when YouTube background-pauses ──
+  // YouTube's player detects page-visibility changes and auto-pauses.
+  // If the user didn't request the pause, we fight it by resuming.
+  function scheduleAutoResume() {
+    clearTimeout(autoResumeTimerRef.current);
+    autoResumeTimerRef.current = setTimeout(() => {
+      const p = playerRef.current;
+      if (!p) return;
+      try {
+        const S = window.YT?.PlayerState;
+        if (S && p.getPlayerState() !== S.PLAYING && !userPausedRef.current) {
+          p.playVideo();
+        }
+      } catch {}
+    }, 600);
+  }
+
+  // ── MediaSession (lock-screen / notification controls) ──
   useEffect(() => {
     if (!cur || !('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -190,22 +218,18 @@ export function PlayerModal() {
         { src: `https://i.ytimg.com/vi/${cur.id}/hqdefault.jpg`, sizes: '480x360', type: 'image/jpeg' },
       ],
     });
-
     navigator.mediaSession.setActionHandler('play', () => {
+      userPausedRef.current = false;
       playerRef.current?.playVideo?.();
     });
     navigator.mediaSession.setActionHandler('pause', () => {
+      userPausedRef.current = true;
       playerRef.current?.pauseVideo?.();
     });
-    navigator.mediaSession.setActionHandler('seekbackward', () => {
-      seekOffset(-10);
-    });
-    navigator.mediaSession.setActionHandler('seekforward', () => {
-      seekOffset(10);
-    });
+    navigator.mediaSession.setActionHandler('seekbackward', () => seekOffset(-10));
+    navigator.mediaSession.setActionHandler('seekforward', () => seekOffset(10));
 
     return () => {
-      // Clean up handlers when unmounting
       try {
         navigator.mediaSession.setActionHandler('play', null);
         navigator.mediaSession.setActionHandler('pause', null);
@@ -215,7 +239,33 @@ export function PlayerModal() {
     };
   }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration]);
 
-  // Keyboard controls
+  // ── Visibility-change auto-resume ──
+  // When the user comes back to the tab (or unlocks screen),
+  // if we were playing before, force-resume in case YouTube paused.
+  useEffect(() => {
+    if (!cur) return;
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        // Page going to background → YouTube will likely auto-pause.
+        // Schedule an auto-resume to fight it.
+        if (!userPausedRef.current) scheduleAutoResume();
+      } else {
+        // Page coming back → if user hadn't paused, make sure we're playing.
+        if (!userPausedRef.current && playerRef.current) {
+          try {
+            const S = window.YT?.PlayerState;
+            if (S && playerRef.current.getPlayerState() !== S.PLAYING) {
+              playerRef.current.playVideo();
+            }
+          } catch {}
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [cur?.id]);
+
+  // ── Keyboard controls ──
   useEffect(() => {
     if (!cur) return;
     const onKey = (e: KeyboardEvent) => {
@@ -226,15 +276,10 @@ export function PlayerModal() {
       if (!p) return;
       try {
         switch (e.key) {
-          case ' ': case 'k': {
-            e.preventDefault();
-            const S = window.YT?.PlayerState;
-            if (S && p.getPlayerState() === S.PLAYING) p.pauseVideo(); else p.playVideo();
-            break;
-          }
+          case ' ': case 'k': e.preventDefault(); togglePlay(); break;
           case 'ArrowRight': e.preventDefault(); seekOffset(10); break;
           case 'ArrowLeft': e.preventDefault(); seekOffset(-10); break;
-          case 'f': { e.preventDefault(); toggleFullscreen(); break; }
+          case 'f': e.preventDefault(); toggleFullscreen(); break;
           case 'm': p.isMuted?.() ? p.unMute() : p.mute(); break;
         }
       } catch {}
@@ -243,7 +288,7 @@ export function PlayerModal() {
     return () => document.removeEventListener('keydown', onKey);
   }, [cur, close, totalDuration]);
 
-  // Fetch video description
+  // ── Fetch video description ──
   useEffect(() => {
     setDesc(''); setDescOpen(false);
     if (!cur) return;
@@ -252,7 +297,7 @@ export function PlayerModal() {
     return () => { cancelled = true; };
   }, [cur?.id]);
 
-  // YouTube player creation
+  // ── YouTube player creation ──
   useEffect(() => {
     setErrMsg(null);
     setVideoOff(true);
@@ -260,6 +305,7 @@ export function PlayerModal() {
     setEnded(false);
     setCurrentTime(0);
     setPip(false);
+    userPausedRef.current = false;
     tcRef.current = 0;
     if (!cur || isFile) return;
 
@@ -287,15 +333,30 @@ export function PlayerModal() {
           onStateChange: (e: any) => {
             const S = window.YT.PlayerState;
             if (e.data === S.PLAYING) {
+              // ── PLAYING ──
+              userPausedRef.current = false;
+              clearTimeout(autoResumeTimerRef.current);
               startTick();
               setPlaying(true);
               setEnded(false);
-            } else {
+              bgPlay(); // ← start silent keepalive so Chrome tab stays alive
+            } else if (e.data === S.PAUSED) {
+              // ── PAUSED ──
               stopTick();
               setPlaying(false);
-            }
-            if (e.data === S.ENDED) {
+              if (!userPausedRef.current) {
+                // YouTube auto-paused (background detection). Fight it.
+                scheduleAutoResume();
+                // DON'T pause the keepalive — we want the tab to stay alive
+              } else {
+                bgPause(); // user explicitly paused → safe to pause keepalive
+              }
+            } else if (e.data === S.ENDED) {
+              // ── ENDED ──
+              stopTick();
+              setPlaying(false);
               setEnded(true);
+              bgPause();
               const v = useStore.getState().cur;
               if (v) {
                 let dur = 0;
@@ -303,13 +364,20 @@ export function PlayerModal() {
                 markDone(useStore.getState().prog, v.id, dur || v.seconds);
                 useStore.getState().commitProg();
               }
+            } else {
+              // BUFFERING, CUED, UNSTARTED, etc.
+              stopTick();
+              setPlaying(false);
             }
           },
           onError: (e: any) => {
             stopTick();
+            bgPause();
             const code = e.data;
-            const msg = (code === 101 || code === 150) ? 'The owner has turned off playback of this video on other sites.'
-              : code === 100 ? 'This video is unavailable — it may be private or removed.'
+            const msg = (code === 101 || code === 150)
+              ? 'The owner has turned off playback of this video on other sites.'
+              : code === 100
+              ? 'This video is unavailable — it may be private or removed.'
               : "This video can't be played here.";
             if (playerRef.current) { try { playerRef.current.destroy(); } catch {} playerRef.current = null; }
             if (frameRef.current) frameRef.current.innerHTML = '';
@@ -325,40 +393,32 @@ export function PlayerModal() {
 
     return () => {
       cancelled = true;
+      clearTimeout(autoResumeTimerRef.current);
       stopTick();
+      bgDestroy(); // ← tear down keepalive when player closes
       if (playerRef.current) { try { playerRef.current.destroy(); } catch {} playerRef.current = null; }
       if (frameRef.current) frameRef.current.innerHTML = '';
     };
   }, [cur?.id]);
 
   const replay = () => {
+    userPausedRef.current = false;
     const p = playerRef.current;
     if (p) { try { p.seekTo(0, true); p.playVideo(); } catch {} }
     setEnded(false);
-  };
-
-  const togglePlay = () => {
-    const p = playerRef.current;
-    if (!p) return;
-    try {
-      const S = window.YT?.PlayerState;
-      if (S && p.getPlayerState() === S.PLAYING) p.pauseVideo(); else p.playVideo();
-    } catch {}
   };
 
   const progPct = totalDuration > 0 ? Math.min(100, (currentTime / totalDuration) * 100) : 0;
   const done = isDone(prog, cur?.id || '');
 
   // ──────────────────────────────────────────────────────────────
-  // CRITICAL LAYOUT: The iframe container (frameRef) MUST always
-  // stay mounted in the DOM. When we switch between modal ↔ pip,
-  // we only change CSS visibility—never unmount. Unmounting would
-  // destroy the YouTube iframe and kill audio playback.
+  // LAYOUT: The iframe (frameRef) is ALWAYS mounted in the DOM.
+  // In pip mode it collapses to height:0 so it's invisible but the
+  // YouTube player (and audio) stays alive.
   // ──────────────────────────────────────────────────────────────
 
   return createPortal(
     <AnimatePresence>
-      {/* Backdrop only in full (modal) mode; clicking it minimises to pip */}
       {cur && !pip && (
         <motion.div key="qf-bd" className="qf-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={() => setPip(true)} />
@@ -374,11 +434,7 @@ export function PlayerModal() {
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}
         >
 
-          {/* ━━━━━ IFRAME CONTAINER — ALWAYS MOUNTED ━━━━━
-              In pip mode we collapse it to 0-height so the iframe
-              stays alive (audio keeps playing) but takes no space.
-              We use overflow:hidden + height:0 instead of display:none
-              because display:none can cause some browsers to pause media. */}
+          {/* ━━━ IFRAME — ALWAYS MOUNTED ━━━ */}
           <div
             className="frame"
             style={pip ? { height: 0, minHeight: 0, overflow: 'hidden', border: 'none' } : undefined}
@@ -398,10 +454,7 @@ export function PlayerModal() {
 
                 <button
                   className="vidtoggle"
-                  onClick={() => {
-                    if (videoOff) setShowConfirm(true);
-                    else setVideoOff(true);
-                  }}
+                  onClick={() => { if (videoOff) setShowConfirm(true); else setVideoOff(true); }}
                   title={videoOff ? 'Show video' : 'Hide video (audio keeps playing)'}
                   aria-label={videoOff ? 'Show video' : 'Hide video'}
                 >
@@ -414,18 +467,13 @@ export function PlayerModal() {
                       <div className="fm-title" style={{ marginBottom: '16px' }}>Are you sure you want to unhide the video?</div>
                       <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                         <button className="btn" onClick={() => setShowConfirm(false)}>Cancel</button>
-                        <button
-                          className="btn primary"
-                          onClick={() => {
-                            setShowConfirm(false);
-                            setVideoOff(false);
-                            const S = window.YT?.PlayerState;
-                            const p = playerRef.current;
-                            if (S && p) setPlaying(p.getPlayerState() === S.PLAYING);
-                          }}
-                        >
-                          Yes, Unhide
-                        </button>
+                        <button className="btn primary" onClick={() => {
+                          setShowConfirm(false);
+                          setVideoOff(false);
+                          const S = window.YT?.PlayerState;
+                          const p = playerRef.current;
+                          if (S && p) setPlaying(p.getPlayerState() === S.PLAYING);
+                        }}>Yes, Unhide</button>
                       </div>
                     </div>
                   </div>
@@ -457,10 +505,10 @@ export function PlayerModal() {
               </div>
             ) : null}
           </div>
-          {/* ━━━━━ END IFRAME CONTAINER ━━━━━ */}
+          {/* ━━━ END IFRAME ━━━ */}
 
 
-          {/* ━━━━━ MINI-PLAYER BAR (visible when pip=true) ━━━━━ */}
+          {/* ━━━ MINI-PLAYER BAR (pip mode) ━━━ */}
           {pip && (
             <div className="mini-player-bar" onClick={() => setPip(false)}>
               <div className="mini-prog-track">
@@ -482,10 +530,9 @@ export function PlayerModal() {
           )}
 
 
-          {/* ━━━━━ FULL PLAYER CONTROLS (visible when pip=false) ━━━━━ */}
+          {/* ━━━ FULL PLAYER CONTROLS (modal mode) ━━━ */}
           {!pip && (
             <>
-              {/* TOP HEADER CONTROLS */}
               <div className="qf-modal-top">
                 <button className="qf-top-btn" onClick={() => setPip(true)} title="Minimize player">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" style={{ width: 22, height: 22 }}>
@@ -498,7 +545,6 @@ export function PlayerModal() {
                 </button>
               </div>
 
-              {/* PROGRESS BAR & SEEK BAR */}
               <div className="player-progress-wrap">
                 <div className="player-seek-touch" onClick={handleSeekRatio}>
                   <div className="player-seek-track">
@@ -512,49 +558,32 @@ export function PlayerModal() {
                 </div>
               </div>
 
-              {/* CONTROLS BAR */}
               <div className="player-controls-bar">
                 <button className="ctrl-action" onClick={replay} title="Restart">
-                  <IRefresh />
-                  <span>Restart</span>
+                  <IRefresh /><span>Restart</span>
                 </button>
-
                 <button className="ctrl-action" onClick={() => seekOffset(-10)} title="-10 seconds">
-                  <span style={{ fontSize: '15px', fontWeight: '800' }}>‹ 10</span>
-                  <span>-10s</span>
+                  <span style={{ fontSize: '15px', fontWeight: '800' }}>‹ 10</span><span>-10s</span>
                 </button>
-
                 <button className="ctrl-play-orb" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
                   {playing ? <IPause style={{ width: 22, height: 22 }} /> : <IPlay style={{ width: 22, height: 22, marginLeft: 2 }} />}
                 </button>
-
                 <button className="ctrl-action" onClick={() => seekOffset(10)} title="+10 seconds">
-                  <span style={{ fontSize: '15px', fontWeight: '800' }}>10 ›</span>
-                  <span>+10s</span>
+                  <span style={{ fontSize: '15px', fontWeight: '800' }}>10 ›</span><span>+10s</span>
                 </button>
 
-                {/* Quality Button */}
                 <div style={{ position: 'relative' }}>
-                  <button
-                    className="ctrl-action"
-                    onClick={() => setQualityMenuOpen(o => !o)}
-                    title="Playback Quality"
-                  >
+                  <button className="ctrl-action" onClick={() => setQualityMenuOpen(o => !o)} title="Playback Quality">
                     <IGear style={{ width: 19, height: 19, color: 'var(--accent)' }} />
                     <span style={{ color: 'var(--accent)', fontWeight: '700' }}>
                       {quality === 'auto' ? 'Auto' : quality.replace('hd', '')}
                     </span>
                   </button>
-
                   {qualityMenuOpen && (
                     <div className="quality-dropdown-menu">
                       <div className="qdm-title">Resolution</div>
                       {QUALITY_OPTIONS.map(opt => (
-                        <button
-                          key={opt.id}
-                          className={`qdm-item ${quality === opt.id ? 'active' : ''}`}
-                          onClick={() => selectQuality(opt.id)}
-                        >
+                        <button key={opt.id} className={`qdm-item ${quality === opt.id ? 'active' : ''}`} onClick={() => selectQuality(opt.id)}>
                           <span>{opt.label}</span>
                           {quality === opt.id && <ICheck style={{ width: 14, height: 14, color: 'var(--accent)' }} />}
                         </button>
@@ -563,26 +592,19 @@ export function PlayerModal() {
                   )}
                 </div>
 
-                {/* Fullscreen Button */}
                 <button className="ctrl-action" onClick={toggleFullscreen} title="Fullscreen">
-                  <IExpand />
-                  <span>Full</span>
+                  <IExpand /><span>Full</span>
                 </button>
-
-                {/* Share Button */}
                 <button className="ctrl-action" onClick={handleShare} title="Share video">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 19, height: 19 }}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg>
                   <span>Share</span>
                 </button>
-
-                {/* Watched / Done Toggle */}
                 <button className={`ctrl-action ${done ? 'done-active' : ''}`} onClick={toggleWatched} title="Toggle watched">
                   <ICheck style={{ width: 19, height: 19, color: done ? 'var(--good)' : 'var(--ink-soft)' }} />
                   <span style={{ color: done ? 'var(--good)' : 'inherit' }}>{done ? 'Watched' : 'Done'}</span>
                 </button>
               </div>
 
-              {/* VIDEO INFO & DETAILS */}
               <div className="info">
                 <div>
                   <h3>{cur.title}</h3>
