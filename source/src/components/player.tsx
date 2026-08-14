@@ -178,7 +178,9 @@ export function PlayerModal() {
     }, 1000);
   }
 
-  // MediaSession integration for Lockscreen & Control Center audio widgets
+  // MediaSession integration for Lockscreen & Control Center audio widgets.
+  // Chrome on Android + iOS Safari will show lock-screen / notification controls
+  // when a MediaSession is active, allowing background audio to continue.
   useEffect(() => {
     if (!cur || !('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -201,6 +203,16 @@ export function PlayerModal() {
     navigator.mediaSession.setActionHandler('seekforward', () => {
       seekOffset(10);
     });
+
+    return () => {
+      // Clean up handlers when unmounting
+      try {
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('seekbackward', null);
+        navigator.mediaSession.setActionHandler('seekforward', null);
+      } catch {}
+    };
   }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration]);
 
   // Keyboard controls
@@ -247,6 +259,7 @@ export function PlayerModal() {
     setPlaying(false);
     setEnded(false);
     setCurrentTime(0);
+    setPip(false);
     tcRef.current = 0;
     if (!cur || isFile) return;
 
@@ -336,9 +349,16 @@ export function PlayerModal() {
   const progPct = totalDuration > 0 ? Math.min(100, (currentTime / totalDuration) * 100) : 0;
   const done = isDone(prog, cur?.id || '');
 
+  // ──────────────────────────────────────────────────────────────
+  // CRITICAL LAYOUT: The iframe container (frameRef) MUST always
+  // stay mounted in the DOM. When we switch between modal ↔ pip,
+  // we only change CSS visibility—never unmount. Unmounting would
+  // destroy the YouTube iframe and kill audio playback.
+  // ──────────────────────────────────────────────────────────────
+
   return createPortal(
     <AnimatePresence>
-      {/* Backdrop only in modal mode */}
+      {/* Backdrop only in full (modal) mode; clicking it minimises to pip */}
       {cur && !pip && (
         <motion.div key="qf-bd" className="qf-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={() => setPip(true)} />
@@ -353,8 +373,95 @@ export function PlayerModal() {
           exit={{ opacity: 0, scale: 0.98, y: 18 }}
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}
         >
-          {/* MINI PLAYER VIEW (when pip is true) */}
-          {pip ? (
+
+          {/* ━━━━━ IFRAME CONTAINER — ALWAYS MOUNTED ━━━━━
+              In pip mode we collapse it to 0-height so the iframe
+              stays alive (audio keeps playing) but takes no space.
+              We use overflow:hidden + height:0 instead of display:none
+              because display:none can cause some browsers to pause media. */}
+          <div
+            className="frame"
+            style={pip ? { height: 0, minHeight: 0, overflow: 'hidden', border: 'none' } : undefined}
+          >
+            <div ref={frameRef} style={{ width: '100%', height: '100%' }} />
+            {!isFile && !errMsg && (
+              <>
+                <div
+                  className="audiocover"
+                  style={{ opacity: videoOff ? 1 : 0, pointerEvents: videoOff ? 'auto' : 'none' }}
+                  onClick={togglePlay}
+                  role="button"
+                  aria-label={playing ? 'Pause' : 'Play'}
+                >
+                  <AudioViz playing={playing} title={cur.title} channel={cur.channelTitle} />
+                </div>
+
+                <button
+                  className="vidtoggle"
+                  onClick={() => {
+                    if (videoOff) setShowConfirm(true);
+                    else setVideoOff(true);
+                  }}
+                  title={videoOff ? 'Show video' : 'Hide video (audio keeps playing)'}
+                  aria-label={videoOff ? 'Show video' : 'Hide video'}
+                >
+                  {videoOff ? <IVideo /> : <IVideoOff />}
+                </button>
+
+                {showConfirm && (
+                  <div className="qf-backdrop" style={{ zIndex: 9999, display: 'grid', placeItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }}>
+                    <div className="login-card" style={{ background: 'var(--bg)', padding: '24px', borderRadius: '12px' }}>
+                      <div className="fm-title" style={{ marginBottom: '16px' }}>Are you sure you want to unhide the video?</div>
+                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                        <button className="btn" onClick={() => setShowConfirm(false)}>Cancel</button>
+                        <button
+                          className="btn primary"
+                          onClick={() => {
+                            setShowConfirm(false);
+                            setVideoOff(false);
+                            const S = window.YT?.PlayerState;
+                            const p = playerRef.current;
+                            if (S && p) setPlaying(p.getPlayerState() === S.PLAYING);
+                          }}
+                        >
+                          Yes, Unhide
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {ended && (
+                  <div className="endcover">
+                    <div className="end-title">Finished</div>
+                    <div className="end-actions">
+                      <button className="btn primary" onClick={replay}><IPlay />Replay</button>
+                      <button className="btn" onClick={close}>Back to feed</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {isFile ? (
+              <div className="frame-msg">
+                <div className="fm-title">Playback needs a web address</div>
+                <div className="fm-body">Serve it over http or open in browser.</div>
+                <a href={`https://www.youtube.com/watch?v=${cur.id}`} target="_blank" rel="noopener" className="btn primary">Watch on YouTube ↗</a>
+              </div>
+            ) : errMsg ? (
+              <div className="frame-msg">
+                <div className="fm-title">Can't play here</div>
+                <div className="fm-body">{errMsg}</div>
+                <a href={`https://www.youtube.com/watch?v=${cur.id}`} target="_blank" rel="noopener" className="btn primary">Watch on YouTube ↗</a>
+              </div>
+            ) : null}
+          </div>
+          {/* ━━━━━ END IFRAME CONTAINER ━━━━━ */}
+
+
+          {/* ━━━━━ MINI-PLAYER BAR (visible when pip=true) ━━━━━ */}
+          {pip && (
             <div className="mini-player-bar" onClick={() => setPip(false)}>
               <div className="mini-prog-track">
                 <div className="mini-prog-fill" style={{ width: `${progPct}%` }} />
@@ -372,95 +479,23 @@ export function PlayerModal() {
                 </button>
               </div>
             </div>
-          ) : (
-            /* FULL EXPANDED PLAYER VIEW */
+          )}
+
+
+          {/* ━━━━━ FULL PLAYER CONTROLS (visible when pip=false) ━━━━━ */}
+          {!pip && (
             <>
               {/* TOP HEADER CONTROLS */}
               <div className="qf-modal-top">
                 <button className="qf-top-btn" onClick={() => setPip(true)} title="Minimize player">
-                  <span style={{ fontSize: '18px', display: 'inline-block', transform: 'rotate(90deg)' }}>›</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" style={{ width: 22, height: 22 }}>
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
                 </button>
                 <span className="qf-top-label">Now Playing</span>
                 <button className="qf-top-btn" onClick={close} title="Close player">
                   <IClose />
                 </button>
-              </div>
-
-              {/* VIDEO FRAME CONTAINER */}
-              <div className="frame">
-                <div ref={frameRef} style={{ width: '100%', height: '100%' }} />
-                {!isFile && !errMsg && (
-                  <>
-                    <div
-                      className="audiocover"
-                      style={{ opacity: videoOff ? 1 : 0, pointerEvents: videoOff ? 'auto' : 'none' }}
-                      onClick={togglePlay}
-                      role="button"
-                      aria-label={playing ? 'Pause' : 'Play'}
-                    >
-                      <AudioViz playing={playing} title={cur.title} channel={cur.channelTitle} />
-                    </div>
-
-                    <button
-                      className="vidtoggle"
-                      onClick={() => {
-                        if (videoOff) setShowConfirm(true);
-                        else setVideoOff(true);
-                      }}
-                      title={videoOff ? 'Show video' : 'Hide video (audio keeps playing)'}
-                      aria-label={videoOff ? 'Show video' : 'Hide video'}
-                    >
-                      {videoOff ? <IVideo /> : <IVideoOff />}
-                    </button>
-
-                    {showConfirm && (
-                      <div className="qf-backdrop" style={{ zIndex: 9999, display: 'grid', placeItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }}>
-                        <div className="login-card" style={{ background: 'var(--bg)', padding: '24px', borderRadius: '12px' }}>
-                          <div className="fm-title" style={{ marginBottom: '16px' }}>Are you sure you want to unhide the video?</div>
-                          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                            <button className="btn" onClick={() => setShowConfirm(false)}>Cancel</button>
-                            <button
-                              className="btn primary"
-                              onClick={() => {
-                                setShowConfirm(false);
-                                setVideoOff(false);
-                                const S = window.YT?.PlayerState;
-                                const p = playerRef.current;
-                                if (S && p) setPlaying(p.getPlayerState() === S.PLAYING);
-                              }}
-                            >
-                              Yes, Unhide
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {ended && (
-                      <div className="endcover">
-                        <div className="end-title">Finished</div>
-                        <div className="end-actions">
-                          <button className="btn primary" onClick={replay}><IPlay />Replay</button>
-                          <button className="btn" onClick={close}>Back to feed</button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {isFile ? (
-                  <div className="frame-msg">
-                    <div className="fm-title">Playback needs a web address</div>
-                    <div className="fm-body">Serve it over http or open in browser.</div>
-                    <a href={`https://www.youtube.com/watch?v=${cur.id}`} target="_blank" rel="noopener" className="btn primary">Watch on YouTube ↗</a>
-                  </div>
-                ) : errMsg ? (
-                  <div className="frame-msg">
-                    <div className="fm-title">Can't play here</div>
-                    <div className="fm-body">{errMsg}</div>
-                    <a href={`https://www.youtube.com/watch?v=${cur.id}`} target="_blank" rel="noopener" className="btn primary">Watch on YouTube ↗</a>
-                  </div>
-                ) : null}
               </div>
 
               {/* PROGRESS BAR & SEEK BAR */}
@@ -477,7 +512,7 @@ export function PlayerModal() {
                 </div>
               </div>
 
-              {/* CONTROLS BAR (Restart, -10s, Play/Pause, +10s, Quality, Fullscreen, Share, Done) */}
+              {/* CONTROLS BAR */}
               <div className="player-controls-bar">
                 <button className="ctrl-action" onClick={replay} title="Restart">
                   <IRefresh />
@@ -567,6 +602,7 @@ export function PlayerModal() {
               )}
             </>
           )}
+
         </motion.div>
       )}
     </AnimatePresence>,
