@@ -1,6 +1,6 @@
 <lint-module
     format="1"
-    dir="/Users/safwanabdulshukkur/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android"
+    dir="/Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android"
     name=":expo-pip"
     type="LIBRARY"
     maven="host.exp.exponent:expo-pip:1.0.0"

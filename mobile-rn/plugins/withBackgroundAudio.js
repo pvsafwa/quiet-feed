@@ -48,6 +48,16 @@ function withAndroidPipMainActivity(config) {
   override fun onBind(intent: android.content.Intent?): android.os.IBinder? = null
   override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
     try {
+      if (intent?.getBooleanExtra("stop", false) == true) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+          stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+          stopForeground(true)
+        }
+        stopSelf()
+        return START_NOT_STICKY
+      }
+
       app.quietfeed.MainActivity.Companion.currentNotification?.let {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
           startForeground(1001, it, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -55,20 +65,29 @@ function withAndroidPipMainActivity(config) {
           startForeground(1001, it)
         }
       }
-      if (intent?.getBooleanExtra("stop", false) == true) {
-        stopForeground(true)
-        stopSelf()
-      }
     } catch (e: Exception) {
-      android.util.Log.e("AudioService", "Error in AudioService", e)
+      android.util.Log.e("AudioService", "Error in AudioService onStartCommand", e)
     }
-    return START_STICKY
+    return START_NOT_STICKY
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    try {
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+      } else {
+        stopForeground(true)
+      }
+    } catch (e: Exception) {}
   }
 }
 
 class MainActivity : ReactActivity() {
   companion object {
     var isPlaying = false
+    var currentTitle: String = "Quiet Feed"
+    var currentChannel: String = ""
     var currentNotification: android.app.Notification? = null
     private var activityRef: java.lang.ref.WeakReference<MainActivity>? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
@@ -78,6 +97,15 @@ class MainActivity : ReactActivity() {
 
     fun setMainActivity(activity: MainActivity) {
       activityRef = java.lang.ref.WeakReference(activity)
+    }
+
+    fun updateVideoMetadata(title: String, channel: String, durationSec: Float) {
+      currentTitle = if (title.isNotBlank()) title else "Quiet Feed"
+      currentChannel = channel
+      currentDurationSec = durationSec
+      activityRef?.get()?.let { activity ->
+        activity.updateNotificationAndWakeLock(isPlaying)
+      }
     }
 
     fun updatePlaybackState(playing: Boolean) {
@@ -92,13 +120,24 @@ class MainActivity : ReactActivity() {
 
     fun syncPlaybackPosition(positionSec: Float, durationSec: Float, playing: Boolean) {
       currentPositionSec = positionSec
-      currentDurationSec = durationSec
+      if (durationSec > 0) {
+        currentDurationSec = durationSec
+      }
       activityRef?.get()?.let { activity ->
         if (isPlaying != playing) {
           updatePlaybackState(playing)
-        } else if (playing) {
-          activity.updateNotificationAndWakeLock(true)
+        } else {
+          activity.updateMediaSessionStateOnly(playing, positionSec, currentDurationSec)
         }
+      }
+    }
+
+    fun stopPlayback() {
+      isPlaying = false
+      currentPositionSec = 0f
+      currentDurationSec = 0f
+      activityRef?.get()?.let { activity ->
+        activity.cleanStopPlayback()
       }
     }
   }
@@ -122,18 +161,15 @@ class MainActivity : ReactActivity() {
             .emit("onPipPlayPause", null)
         }
       } else if (intent.action == "app.quietfeed.ACTION_STOP") {
-        isPlaying = false
+        cleanStopPlayback()
         togglePlaybackNatively(false)
-        val serviceIntent = android.content.Intent(context, AudioForegroundService::class.java)
-        serviceIntent.putExtra("stop", true)
-        context.startService(serviceIntent)
         
         val reactApplication = application as? com.facebook.react.ReactApplication
         val reactContext = reactApplication?.reactHost?.currentReactContext ?: reactApplication?.reactNativeHost?.reactInstanceManager?.currentReactContext
         if (reactContext != null) {
           reactContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("onPipPlayPause", null)
+            .emit("onPipStop", null)
         }
       }
     }
@@ -186,15 +222,68 @@ class MainActivity : ReactActivity() {
     }
   }
 
+  fun cleanStopPlayback() {
+    try {
+      isPlaying = false
+      if (wakeLock?.isHeld == true) {
+        try { wakeLock?.release() } catch (e: Exception) {}
+      }
+
+      val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+      notificationManager?.cancel(1001)
+
+      val serviceIntent = android.content.Intent(this, AudioForegroundService::class.java)
+      serviceIntent.putExtra("stop", true)
+      startService(serviceIntent)
+
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+        mediaSession?.let { ms ->
+          val stateBuilder = android.media.session.PlaybackState.Builder()
+            .setState(android.media.session.PlaybackState.STATE_STOPPED, 0L, 0.0f)
+          ms.setPlaybackState(stateBuilder.build())
+          ms.isActive = false
+        }
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("MainActivity", "Error during cleanStopPlayback", e)
+    }
+  }
+
+  fun updateMediaSessionStateOnly(playing: Boolean, positionSec: Float, durationSec: Float) {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+      try {
+        mediaSession?.let { ms ->
+          val stateBuilder = android.media.session.PlaybackState.Builder()
+            .setActions(
+              android.media.session.PlaybackState.ACTION_PLAY or
+              android.media.session.PlaybackState.ACTION_PAUSE or
+              android.media.session.PlaybackState.ACTION_PLAY_PAUSE or
+              android.media.session.PlaybackState.ACTION_STOP or
+              android.media.session.PlaybackState.ACTION_SEEK_TO
+            )
+            .setState(
+              if (playing) android.media.session.PlaybackState.STATE_PLAYING else android.media.session.PlaybackState.STATE_PAUSED,
+              if (positionSec > 0) (positionSec * 1000).toLong() else android.media.session.PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+              if (playing) 1.0f else 0.0f
+            )
+          ms.setPlaybackState(stateBuilder.build())
+        }
+      } catch (e: Exception) {}
+    }
+  }
+
   fun updateNotificationAndWakeLock(playing: Boolean) {
     try {
       val pm = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
-      val am = getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
       
       if (playing) {
-        if (wakeLock == null || wakeLock?.isHeld != true) {
-          wakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "QuietFeed::AudioWakeLock")
-          wakeLock?.acquire(30 * 60 * 1000L)
+        if (wakeLock == null) {
+          wakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "QuietFeed::AudioWakeLock")?.apply {
+            setReferenceCounted(false)
+          }
+        }
+        if (wakeLock?.isHeld != true) {
+          wakeLock?.acquire(45 * 60 * 1000L)
         }
       } else {
         if (wakeLock?.isHeld == true) {
@@ -214,6 +303,10 @@ class MainActivity : ReactActivity() {
                 updatePlaybackState(false)
                 togglePlaybackNatively(false)
               }
+              override fun onStop() {
+                cleanStopPlayback()
+                togglePlaybackNatively(false)
+              }
             })
             setFlags(android.media.session.MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or android.media.session.MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
           }
@@ -224,23 +317,27 @@ class MainActivity : ReactActivity() {
             android.media.session.PlaybackState.ACTION_PLAY or
             android.media.session.PlaybackState.ACTION_PAUSE or
             android.media.session.PlaybackState.ACTION_PLAY_PAUSE or
+            android.media.session.PlaybackState.ACTION_STOP or
             android.media.session.PlaybackState.ACTION_SEEK_TO
           )
           .setState(
             if (playing) android.media.session.PlaybackState.STATE_PLAYING else android.media.session.PlaybackState.STATE_PAUSED,
             if (currentPositionSec > 0) (currentPositionSec * 1000).toLong() else android.media.session.PlaybackState.PLAYBACK_POSITION_UNKNOWN,
-            1.0f
+            if (playing) 1.0f else 0.0f
           )
 
         mediaSession?.setPlaybackState(stateBuilder.build())
         
+        val metaBuilder = android.media.MediaMetadata.Builder()
+          .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+          .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, currentChannel)
+          .putString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST, currentChannel)
+        
         if (currentDurationSec > 0) {
-          val metaBuilder = android.media.MediaMetadata.Builder()
-            .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, (currentDurationSec * 1000).toLong())
-          mediaSession?.setMetadata(metaBuilder.build())
+          metaBuilder.putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, (currentDurationSec * 1000).toLong())
         }
-
-        mediaSession?.isActive = playing
+        mediaSession?.setMetadata(metaBuilder.build())
+        mediaSession?.isActive = true
       }
 
       if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -248,13 +345,17 @@ class MainActivity : ReactActivity() {
         val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         val channel = android.app.NotificationChannel(
           channelId,
-          "Quiet Feed Audio",
+          "Quiet Feed Audio Playback",
           android.app.NotificationManager.IMPORTANCE_LOW
-        )
+        ).apply {
+          description = "Controls background video audio playback"
+          setShowBadge(false)
+        }
         notificationManager.createNotificationChannel(channel)
 
-        val intent = android.content.Intent("app.quietfeed.ACTION_PLAY_PAUSE")
-        intent.setPackage(packageName)
+        val intent = android.content.Intent("app.quietfeed.ACTION_PLAY_PAUSE").apply {
+          setPackage(packageName)
+        }
         val pendingIntent = android.app.PendingIntent.getBroadcast(
           this,
           1,
@@ -262,12 +363,13 @@ class MainActivity : ReactActivity() {
           android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
 
-        val deleteIntent = android.content.Intent("app.quietfeed.ACTION_STOP")
-        deleteIntent.setPackage(packageName)
-        val pendingDeleteIntent = android.app.PendingIntent.getBroadcast(
+        val stopIntent = android.content.Intent("app.quietfeed.ACTION_STOP").apply {
+          setPackage(packageName)
+        }
+        val pendingStopIntent = android.app.PendingIntent.getBroadcast(
           this,
-          3,
-          deleteIntent,
+          2,
+          stopIntent,
           android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -282,13 +384,14 @@ class MainActivity : ReactActivity() {
         val actionTitle = if (playing) "Pause" else "Play"
 
         val notification = android.app.Notification.Builder(this, channelId)
-          .setContentTitle("Quiet Feed")
-          .setContentText(if (playing) "Playing Audio" else "Paused")
+          .setContentTitle(currentTitle)
+          .setContentText(if (currentChannel.isNotBlank()) currentChannel else if (playing) "Playing Audio" else "Paused")
           .setSmallIcon(android.R.drawable.ic_media_play)
           .setOngoing(playing)
+          .setAutoCancel(!playing)
           .setStyle(mediaStyle)
           .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
-          .setDeleteIntent(pendingDeleteIntent)
+          .setDeleteIntent(pendingStopIntent)
           .addAction(
             android.app.Notification.Action.Builder(
               android.graphics.drawable.Icon.createWithResource(this, iconRes),
@@ -304,7 +407,6 @@ class MainActivity : ReactActivity() {
         if (playing) {
           startForegroundService(serviceIntent)
         } else {
-          startForegroundService(serviceIntent)
           notificationManager.notify(1001, notification)
         }
       }
@@ -316,14 +418,7 @@ class MainActivity : ReactActivity() {
   override fun onPause() {
     super.onPause()
     if (isPlaying) {
-      try {
-        val reactApplication = application as? com.facebook.react.ReactApplication
-        reactApplication?.reactHost?.onHostResume(this)
-        reactApplication?.reactNativeHost?.reactInstanceManager?.onHostResume(this, this)
-        keepWebViewsResumed()
-      } catch (e: Exception) {
-        android.util.Log.e("MainActivity", "Failed to force host resume in onPause", e)
-      }
+      keepWebViewsResumed()
     }
   }
 
@@ -332,6 +427,18 @@ class MainActivity : ReactActivity() {
     if (isPlaying) {
       keepWebViewsResumed()
     }
+  }
+
+  override fun onDestroy() {
+    try {
+      unregisterReceiver(playbackReceiver)
+    } catch (e: Exception) {}
+    cleanStopPlayback()
+    try {
+      mediaSession?.release()
+      mediaSession = null
+    } catch (e: Exception) {}
+    super.onDestroy()
   }
 `;
       src = src.replace(mainClassAnchor, replacement);
@@ -342,17 +449,14 @@ class MainActivity : ReactActivity() {
     super.onCreate(null)
     setMainActivity(this)
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+      val filter = android.content.IntentFilter().apply {
+        addAction("app.quietfeed.ACTION_PLAY_PAUSE")
+        addAction("app.quietfeed.ACTION_STOP")
+      }
       if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        registerReceiver(
-          playbackReceiver,
-          android.content.IntentFilter("app.quietfeed.ACTION_PLAY_PAUSE"),
-          android.content.Context.RECEIVER_EXPORTED
-        )
+        registerReceiver(playbackReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
       } else {
-        registerReceiver(
-          playbackReceiver,
-          android.content.IntentFilter("app.quietfeed.ACTION_PLAY_PAUSE")
-        )
+        registerReceiver(playbackReceiver, filter)
       }
     }
   }`;

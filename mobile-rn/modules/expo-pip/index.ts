@@ -5,8 +5,10 @@ interface ExpoPipInterface {
   isPipSupported(): boolean;
   setShouldEnterPipOnLeave(enabled: boolean): boolean;
   isInPip(): boolean;
+  updateVideoMetadata(title: string, channelTitle: string, durationSec: number): boolean;
   setPlaybackState(playing: boolean): boolean;
   syncPlaybackPosition(position: number, duration: number, playing: boolean): boolean;
+  stopPlayback(): boolean;
 }
 
 const ExpoPip = requireNativeModule<ExpoPipInterface>('ExpoPip');

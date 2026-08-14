@@ -6,8 +6,36 @@ import android.util.Log
 import android.util.Rational
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.lang.reflect.Method
 
 class ExpoPipModule : Module() {
+  private var companionInstance: Any? = null
+  private var updatePlaybackStateMethod: Method? = null
+  private var syncPlaybackPositionMethod: Method? = null
+  private var updateVideoMetadataMethod: Method? = null
+  private var stopPlaybackMethod: Method? = null
+
+  private fun getCompanion(): Any? {
+    if (companionInstance != null) return companionInstance
+    return try {
+      val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
+      val companionField = mainActivityClass.getDeclaredField("Companion")
+      companionField.isAccessible = true
+      val instance = companionField.get(null)
+      companionInstance = instance
+
+      updatePlaybackStateMethod = instance.javaClass.getDeclaredMethod("updatePlaybackState", Boolean::class.java).apply { isAccessible = true }
+      syncPlaybackPositionMethod = instance.javaClass.getDeclaredMethod("syncPlaybackPosition", Float::class.java, Float::class.java, Boolean::class.java).apply { isAccessible = true }
+      updateVideoMetadataMethod = instance.javaClass.getDeclaredMethod("updateVideoMetadata", String::class.java, String::class.java, Float::class.java).apply { isAccessible = true }
+      stopPlaybackMethod = instance.javaClass.getDeclaredMethod("stopPlayback").apply { isAccessible = true }
+
+      instance
+    } catch (e: Exception) {
+      Log.e("ExpoPipModule", "Failed to cache MainActivity companion methods", e)
+      null
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("ExpoPip")
 
@@ -36,81 +64,65 @@ class ExpoPipModule : Module() {
 
     Function("setShouldEnterPipOnLeave") { enabled: Boolean ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
-        val companionField = mainActivityClass.getDeclaredField("Companion")
-        companionField.isAccessible = true
-        val companionInstance = companionField.get(null)
-        
-        val setter = companionInstance.javaClass.getDeclaredMethod("setShouldEnterPipOnLeave", Boolean::class.java)
+        val companion = getCompanion() ?: return@Function false
+        val setter = companion.javaClass.getDeclaredMethod("setShouldEnterPipOnLeave", Boolean::class.java)
         setter.isAccessible = true
-        setter.invoke(companionInstance, enabled)
+        setter.invoke(companion, enabled)
         true
       } catch (e: Exception) {
-        Log.e("ExpoPipModule", "Failed to set shouldEnterPipOnLeave via reflection", e)
         false
       }
     }
 
     Function("isInPip") {
+      val activity = appContext.currentActivity
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        activity?.isInPictureInPictureMode ?: false
+      } else {
+        false
+      }
+    }
+
+    Function("updateVideoMetadata") { title: String, channelTitle: String, durationSec: Float ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
-        val companionField = mainActivityClass.getDeclaredField("Companion")
-        companionField.isAccessible = true
-        val companionInstance = companionField.get(null)
-        
-        val isInNativePipField = companionInstance.javaClass.getDeclaredField("isInNativePip")
-        isInNativePipField.isAccessible = true
-        val result = isInNativePipField.getBoolean(companionInstance)
-        
-        val activity = appContext.currentActivity
-        val activityPip = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          activity?.isInPictureInPictureMode ?: false
-        } else {
-          false
-        }
-        
-        result || activityPip
+        val companion = getCompanion() ?: return@Function false
+        updateVideoMetadataMethod?.invoke(companion, title, channelTitle, durationSec)
+        true
       } catch (e: Exception) {
-        Log.e("ExpoPipModule", "Failed to check isInNativePip via reflection", e)
-        val activity = appContext.currentActivity
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          activity?.isInPictureInPictureMode ?: false
-        } else {
-          false
-        }
+        Log.e("ExpoPipModule", "Failed to update video metadata", e)
+        false
       }
     }
 
     Function("setPlaybackState") { playing: Boolean ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
-        val companionField = mainActivityClass.getDeclaredField("Companion")
-        companionField.isAccessible = true
-        val companionInstance = companionField.get(null)
-        
-        val setter = companionInstance.javaClass.getDeclaredMethod("updatePlaybackState", Boolean::class.java)
-        setter.isAccessible = true
-        setter.invoke(companionInstance, playing)
+        val companion = getCompanion() ?: return@Function false
+        updatePlaybackStateMethod?.invoke(companion, playing)
         true
       } catch (e: Exception) {
-        Log.e("ExpoPipModule", "Failed to update playback state via reflection", e)
+        Log.e("ExpoPipModule", "Failed to update playback state", e)
         false
       }
     }
 
     Function("syncPlaybackPosition") { positionSec: Float, durationSec: Float, playing: Boolean ->
       try {
-        val mainActivityClass = Class.forName("app.quietfeed.MainActivity")
-        val companionField = mainActivityClass.getDeclaredField("Companion")
-        companionField.isAccessible = true
-        val companionInstance = companionField.get(null)
-        
-        val setter = companionInstance.javaClass.getDeclaredMethod("syncPlaybackPosition", Float::class.java, Float::class.java, Boolean::class.java)
-        setter.isAccessible = true
-        setter.invoke(companionInstance, positionSec, durationSec, playing)
+        val companion = getCompanion() ?: return@Function false
+        syncPlaybackPositionMethod?.invoke(companion, positionSec, durationSec, playing)
         true
       } catch (e: Exception) {
-        Log.e("ExpoPipModule", "Failed to sync playback position via reflection", e)
+        Log.e("ExpoPipModule", "Failed to sync playback position", e)
+        false
+      }
+    }
+
+    Function("stopPlayback") {
+      try {
+        val companion = getCompanion() ?: return@Function false
+        stopPlaybackMethod?.invoke(companion)
+        true
+      } catch (e: Exception) {
+        Log.e("ExpoPipModule", "Failed to stop playback", e)
         false
       }
     }

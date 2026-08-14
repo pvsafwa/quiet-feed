@@ -44,8 +44,13 @@ function PlayerWindow({ video }: { video: Video }) {
   const pr = useStore.getState().prog.v[video.id];
   const startAt = pr && !pr.done && pr.p > 10 && (!pr.d || pr.p < pr.d * 0.95) ? Math.floor(pr.p) : 0;
 
+  // Initialize native metadata when video loads
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('onPipPlayPause', () => {
+    ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
+  }, [video.id, video.title, video.channelTitle, video.seconds]);
+
+  useEffect(() => {
+    const subPlayPause = DeviceEventEmitter.addListener('onPipPlayPause', () => {
       if (ended) {
         playerRef.current?.seekTo(0, true);
         setEnded(false);
@@ -54,37 +59,68 @@ function PlayerWindow({ video }: { video: Video }) {
         setWantPlay(p => !p);
       }
     });
-    return () => sub.remove();
+
+    const subStop = DeviceEventEmitter.addListener('onPipStop', () => {
+      closePlayer();
+    });
+
+    return () => {
+      subPlayPause.remove();
+      subStop.remove();
+    };
   }, [ended]);
 
   useEffect(() => {
     if (!playing) {
-      if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; useStore.getState().persistProg(); }
+      if (tickRef.current) { 
+        clearInterval(tickRef.current); 
+        tickRef.current = null; 
+        useStore.getState().persistProg(); 
+      }
       return;
     }
-    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+    if (tickRef.current) { 
+      clearInterval(tickRef.current); 
+      tickRef.current = null; 
+    }
+
     tickRef.current = setInterval(async () => {
       try {
         const t = (await playerRef.current?.getCurrentTime()) || 0;
         const d = (await playerRef.current?.getDuration()) || 0;
         const prog = useStore.getState().prog;
-        addWatch(prog, video.id, 1, d || video.seconds);
-        setPos(prog, video.id, t, d || video.seconds);
-        if (d && t / d >= 0.92 && !isDone(prog, video.id)) markDone(prog, video.id, d);
+        const totalDuration = d || video.seconds || 0;
+        addWatch(prog, video.id, 1, totalDuration);
+        setPos(prog, video.id, t, totalDuration);
+        if (totalDuration > 0 && t / totalDuration >= 0.92 && !isDone(prog, video.id)) {
+          markDone(prog, video.id, totalDuration);
+        }
         
         tcRef.current++;
         if (tcRef.current % 5 === 0) useStore.getState().persistProg();
         
-        // Sync position natively for the Foreground Service Status Bar UI
-        ExpoPip.syncPlaybackPosition(t, d || video.seconds, playing);
+        // Sync position smoothly to native MediaSession for accurate lockscreen/status bar progress
+        ExpoPip.syncPlaybackPosition(t, totalDuration, true);
       } catch { /* player not ready */ }
     }, 1000);
-    return () => { if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; } };
+
+    return () => { 
+      if (tickRef.current) { 
+        clearInterval(tickRef.current); 
+        tickRef.current = null; 
+      } 
+    };
   }, [playing, video]);
 
-  useEffect(() => () => { 
-    useStore.getState().commitProg(); 
-    ExpoPip.setPlaybackState(false);
+  useEffect(() => {
+    return () => { 
+      if (tickRef.current) {
+        clearInterval(tickRef.current);
+        tickRef.current = null;
+      }
+      useStore.getState().commitProg(); 
+      ExpoPip.stopPlayback();
+    };
   }, []);
 
   const onChangeState = (state: string) => {
@@ -96,12 +132,14 @@ function PlayerWindow({ video }: { video: Video }) {
       setPlaying(false);
       setWantPlay(false);
       setEnded(true);
-      ExpoPip.setPlaybackState(false);
+      // Cleanly dismiss notification and stop background service on video completion
+      ExpoPip.stopPlayback();
       return;
     }
     if (state === 'playing') { 
       setPlaying(true); 
       setEnded(false); 
+      ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
       ExpoPip.setPlaybackState(true);
       return; 
     }
@@ -115,7 +153,11 @@ function PlayerWindow({ video }: { video: Video }) {
   };
 
   const closePlayer = () => {
-    ExpoPip.setPlaybackState(false);
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    ExpoPip.stopPlayback();
     useStore.getState().closePlayer();
   };
 
