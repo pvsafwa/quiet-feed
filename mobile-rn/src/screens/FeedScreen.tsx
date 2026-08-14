@@ -14,14 +14,15 @@ export function FeedScreen() {
   const search = useStore(s => s.search);
   const hideShorts = useStore(s => s.hideShorts);
   const busy = useStore(s => s.busy);
+  const selectedChannelIds = useStore(s => s.selectedChannelIds);
   const setSearch = useStore(s => s.setSearch);
   const setHideShorts = useStore(s => s.setHideShorts);
   const runVideos = useStore(s => s.runVideos);
 
   useEffect(() => { if (!useStore.getState().vid.loaded && channels.length) runVideos(true); }, [channels.length, runVideos]);
 
-  const list = useMemo(() => feedItems({ vid, filter, search, hideShorts } as Store), [vid, filter, search, hideShorts]);
-  const more = useMemo(() => hasMoreVideos({ channels, filter, vid } as Store), [channels, filter, vid]);
+  const list = useMemo(() => feedItems({ vid, filter, search, hideShorts, channels, selectedChannelIds }), [vid, filter, search, hideShorts, channels, selectedChannelIds]);
+  const more = useMemo(() => hasMoreVideos({ channels, filter, vid, selectedChannelIds }), [channels, filter, vid, selectedChannelIds]);
 
   const header = (
     <View style={styles.toolbar}>

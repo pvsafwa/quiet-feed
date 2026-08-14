@@ -423,63 +423,70 @@ export const useStore = create<Store>((set, get) => ({
   },
 }));
 
-// ---- derived selectors (pure) ----
-export function userActiveChannels(s: Store): Channel[] {
-  if (!s.selectedChannelIds) return s.channels;
-  return s.channels.filter(c => s.selectedChannelIds!.includes(c.id));
+// ---- derived selectors (pure, fully null-safe) ----
+export function userActiveChannels(s: Partial<Store> | null | undefined): Channel[] {
+  const channels = s?.channels || [];
+  if (!s?.selectedChannelIds) return channels;
+  return channels.filter(c => s.selectedChannelIds!.includes(c.id));
 }
 
-export function feedItems(s: Store): Video[] {
+export function feedItems(s: Partial<Store> | null | undefined): Video[] {
   const active = userActiveChannels(s);
   const activeIds = new Set(active.map(c => c.id));
-  const all = ([] as Video[]).concat(...Object.values(s.vid.buffers)).filter(v => activeIds.has(v.channelId));
+  const buffers = s?.vid?.buffers || {};
+  const all = ([] as Video[]).concat(...Object.values(buffers)).filter(v => activeIds.size === 0 || activeIds.has(v.channelId));
   const seen: Record<string, 1> = {}; let out: Video[] = [];
   for (const v of all) { if (!seen[v.id]) { seen[v.id] = 1; out.push(v); } }
   out.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
-  if (s.filter !== 'all') out = out.filter(v => v.channelId === s.filter);
-  if (s.hideShorts) out = out.filter(v => !(v.seconds != null && v.seconds > 0 && v.seconds <= SHORT_MAX));
-  const q = s.search.trim().toLowerCase();
+  if (s?.filter && s.filter !== 'all') out = out.filter(v => v.channelId === s.filter);
+  if (s?.hideShorts) out = out.filter(v => !(v.seconds != null && v.seconds > 0 && v.seconds <= SHORT_MAX));
+  const q = (s?.search || '').trim().toLowerCase();
   if (q) out = out.filter(v => v.title.toLowerCase().includes(q) || (v.channelTitle || '').toLowerCase().includes(q));
   return out;
 }
 
-export function hasMoreVideos(s: Store): boolean {
+export function hasMoreVideos(s: Partial<Store> | null | undefined): boolean {
   const active = userActiveChannels(s);
-  const chans = s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
-  return chans.some(c => !s.vid.cursors[c.id]?.done);
+  const chans = !s?.filter || s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
+  const cursors = s?.vid?.cursors || {};
+  return chans.some(c => !cursors[c.id]?.done);
 }
 
-export function plList(s: Store): PlaylistMeta[] {
+export function plList(s: Partial<Store> | null | undefined): PlaylistMeta[] {
   const active = userActiveChannels(s);
   const activeIds = new Set(active.map(c => c.id));
-  let list = s.pl.items.filter(p => activeIds.has(p.channelId));
-  if (s.filter !== 'all') list = list.filter(p => p.channelId === s.filter);
-  const q = s.search.trim().toLowerCase();
+  const items = s?.pl?.items || [];
+  let list = items.filter(p => activeIds.size === 0 || activeIds.has(p.channelId));
+  if (s?.filter && s.filter !== 'all') list = list.filter(p => p.channelId === s.filter);
+  const q = (s?.search || '').trim().toLowerCase();
   if (q) list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.channelTitle || '').toLowerCase().includes(q));
   list.sort((a, b) => (a.channelTitle || '').localeCompare(b.channelTitle || '') || (a.title || '').localeCompare(b.title || ''));
   return list;
 }
 
-export function hasMorePlaylists(s: Store): boolean {
+export function hasMorePlaylists(s: Partial<Store> | null | undefined): boolean {
   const active = userActiveChannels(s);
-  const chans = s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
-  return chans.some(c => !s.pl.cursors[c.id]?.done);
+  const chans = !s?.filter || s.filter === 'all' ? active : active.filter(c => c.id === s.filter);
+  const cursors = s?.pl?.cursors || {};
+  return chans.some(c => !cursors[c.id]?.done);
 }
 
-export function watchHistory(s: Store): Video[] {
+export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
   const map = new Map<string, Video>();
-  Object.values(s.vid.buffers).forEach(list => list.forEach(v => map.set(v.id, v)));
-  s.selVideos.forEach(v => map.set(v.id, v));
+  const buffers = s?.vid?.buffers || {};
+  Object.values(buffers).forEach(list => list.forEach(v => map.set(v.id, v)));
+  (s?.selVideos || []).forEach(v => map.set(v.id, v));
 
   const history: Video[] = [];
+  const progV = s?.prog?.v || {};
   map.forEach(v => {
-    const p = s.prog.v[v.id];
+    const p = progV[v.id];
     if (p && (p.p > 0 || p.done)) history.push(v);
   });
 
   history.sort((a, b) => {
-    const ta = s.prog.v[a.id]?.t || 0;
-    const tb = s.prog.v[b.id]?.t || 0;
+    const ta = progV[a.id]?.t || 0;
+    const tb = progV[b.id]?.t || 0;
     return tb - ta;
   });
 
