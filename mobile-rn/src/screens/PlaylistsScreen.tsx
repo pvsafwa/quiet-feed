@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { View, Text, FlatList, Image, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore, plList, userActiveChannels, type Store } from '../store';
 import { isDone } from '../lib/progress';
 import { fmtTotal } from '../lib/format';
@@ -15,7 +16,8 @@ export function PlaylistsScreen() {
   const search = useStore(s => s.search);
   const busy = useStore(s => s.busy);
   const channels = useStore(s => s.channels);
-  const activeChannels = useStore(userActiveChannels);
+  const selectedChannelIds = useStore(s => s.selectedChannelIds);
+  const activeChannels = useStore(useShallow(userActiveChannels));
   const plDur = useStore(s => s.plDur);
   const prog = useStore(s => s.prog);
   useStore(s => s.progV);
@@ -34,8 +36,8 @@ export function PlaylistsScreen() {
 
   const list = useMemo(() => {
     if (filter === 'all') return [];
-    return plList({ pl: { items }, filter, search, channels, selectedChannelIds: useStore.getState().selectedChannelIds } as Store);
-  }, [items, filter, search, channels]);
+    return plList({ pl: { items }, filter, search, channels, selectedChannelIds } as Store);
+  }, [items, filter, search, channels, selectedChannelIds]);
 
   useEffect(() => {
     if (list.length) compute(list);

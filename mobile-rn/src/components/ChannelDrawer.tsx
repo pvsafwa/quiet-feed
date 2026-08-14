@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, Image, StyleSheet, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { DrawerContentScrollView, type DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore, userActiveChannels } from '../store';
 import { colors, radius } from '../theme';
 import type { Channel } from '../lib/types';
@@ -13,7 +14,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const ORDERED_LANGUAGES = ['Arabic', 'English', 'Malayalam', 'Urdu'];
 
 export function ChannelDrawer(props: DrawerContentComponentProps) {
-  const activeChannels = useStore(userActiveChannels);
+  const activeChannels = useStore(useShallow(userActiveChannels));
   const filter = useStore(s => s.filter);
   const isAdmin = useStore(s => s.user?.role === 'admin');
   const setFilter = useStore(s => s.setFilter);
