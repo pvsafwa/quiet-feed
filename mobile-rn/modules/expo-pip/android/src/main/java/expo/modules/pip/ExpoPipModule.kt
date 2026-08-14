@@ -2,6 +2,7 @@ package expo.modules.pip
 
 import android.app.PictureInPictureParams
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.util.Log
 import android.util.Rational
@@ -136,6 +137,39 @@ class ExpoPipModule : Module() {
         true
       } catch (e: Exception) {
         Log.e("ExpoPipModule", "Failed to stop playback", e)
+        false
+      }
+    }
+
+    Function("setOrientationLandscape") {
+      try {
+        val activity = appContext.currentActivity ?: return@Function false
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        true
+      } catch (e: Exception) {
+        Log.e("ExpoPipModule", "Failed to set landscape orientation", e)
+        false
+      }
+    }
+
+    Function("setOrientationPortrait") {
+      try {
+        val activity = appContext.currentActivity ?: return@Function false
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        true
+      } catch (e: Exception) {
+        Log.e("ExpoPipModule", "Failed to set portrait orientation", e)
+        false
+      }
+    }
+
+    Function("unlockOrientation") {
+      try {
+        val activity = appContext.currentActivity ?: return@Function false
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        true
+      } catch (e: Exception) {
+        Log.e("ExpoPipModule", "Failed to unlock orientation", e)
         false
       }
     }

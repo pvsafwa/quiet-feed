@@ -6,7 +6,7 @@ import { ytReady } from '../lib/ytapi';
 import { api } from '../lib/api';
 import { addWatch, setPos, markDone, isDone } from '../lib/progress';
 import { ago, views as fmtViews } from '../lib/format';
-import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause } from './states';
+import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause, ICheck, IGear } from './states';
 
 // Decorative equalizer shown when the video is hidden. It runs in time with
 // playback (play/pause); it cannot mirror the exact waveform because the browser
@@ -24,6 +24,16 @@ function AudioViz({ playing, title, channel }: { playing: boolean; title: string
   );
 }
 
+const QUALITY_OPTIONS = [
+  { id: 'auto', label: 'Auto (Recommended)', short: 'Auto' },
+  { id: 'hd1080', label: '1080p HD', short: '1080p' },
+  { id: 'hd720', label: '720p HD', short: '720p' },
+  { id: 'large', label: '480p', short: '480p' },
+  { id: 'medium', label: '360p', short: '360p' },
+  { id: 'small', label: '240p', short: '240p' },
+  { id: 'tiny', label: '144p', short: '144p' },
+];
+
 export function PlayerModal() {
   const cur = useStore(s => s.cur);
   const close = useStore(s => s.closePlayer);
@@ -39,7 +49,35 @@ export function PlayerModal() {
   const [pip, setPip] = useState(true);
   const [ended, setEnded] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [quality, setQuality] = useState(() => {
+    try { return localStorage.getItem('qf_player_quality') || 'auto'; } catch { return 'auto'; }
+  });
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
+
+  const selectQuality = (qId: string) => {
+    setQuality(qId);
+    setQualityMenuOpen(false);
+    const p = playerRef.current;
+    if (p) {
+      try {
+        if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(qId);
+        if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(qId, qId);
+      } catch {}
+    }
+    try { localStorage.setItem('qf_player_quality', qId); } catch {}
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      const container = frameRef.current?.closest('.qf-window') || frameRef.current;
+      if (container?.requestFullscreen) {
+        container.requestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+    }
+  };
 
   function stopTick() { if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; useStore.getState().persistProg(); } }
   function startTick() {
@@ -176,6 +214,65 @@ export function PlayerModal() {
           initial={{ opacity: 0, scale: 0.98, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: 18 }}
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}>
           <div className="qf-controls">
+            <div style={{ position: 'relative' }}>
+              <button
+                className="qf-cbtn"
+                onClick={() => setQualityMenuOpen(o => !o)}
+                title="Playback Quality"
+                aria-label="Playback Quality"
+                style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px' }}
+              >
+                {quality === 'auto' ? 'HD' : quality.replace('hd', '')}
+              </button>
+              {qualityMenuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '6px',
+                    minWidth: '140px',
+                    zIndex: 1000,
+                    background: 'var(--bg2)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '4px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                  }}
+                >
+                  <div style={{ padding: '6px 10px', fontSize: '11px', fontWeight: '700', color: 'var(--ink-soft)', textTransform: 'uppercase' }}>
+                    Quality
+                  </div>
+                  {QUALITY_OPTIONS.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => selectQuality(opt.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        padding: '6px 10px',
+                        fontSize: '13px',
+                        color: quality === opt.id ? 'var(--accent)' : 'var(--ink)',
+                        background: quality === opt.id ? 'var(--bg3)' : 'transparent',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: quality === opt.id ? '700' : '400',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span>{opt.label}</span>
+                      {quality === opt.id && <ICheck style={{ width: '14px', height: '14px' }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button className="qf-cbtn" onClick={toggleFullscreen} title="Fullscreen" aria-label="Fullscreen">
+              <IExpand />
+            </button>
             <button className="qf-cbtn" onClick={() => setPip(p => !p)}
               title={pip ? 'Expand' : 'Minimize to corner'} aria-label={pip ? 'Expand' : 'Minimize'}>
               {pip ? <IExpand /> : <IPip />}

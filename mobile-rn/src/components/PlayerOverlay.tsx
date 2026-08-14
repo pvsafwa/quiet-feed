@@ -8,11 +8,14 @@ import {
   DeviceEventEmitter,
   TouchableWithoutFeedback,
   Share,
-  PanResponder,
+  BackHandler,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -32,6 +35,18 @@ import ExpoPip from '../../modules/expo-pip';
 const MINI_PLAYER_HEIGHT = 60;
 const TAB_BAR_HEIGHT = 60;
 
+const QUALITY_KEY = 'qf_player_quality';
+
+export const QUALITY_OPTIONS = [
+  { id: 'auto', label: 'Auto (Recommended)', short: 'Auto', badge: '' },
+  { id: 'hd1080', label: '1080p', short: '1080p', badge: 'HD' },
+  { id: 'hd720', label: '720p', short: '720p', badge: 'HD' },
+  { id: 'large', label: '480p', short: '480p', badge: 'SD' },
+  { id: 'medium', label: '360p', short: '360p', badge: 'SD' },
+  { id: 'small', label: '240p', short: '240p', badge: 'SD' },
+  { id: 'tiny', label: '144p', short: '144p', badge: 'SD' },
+];
+
 export function PlayerOverlay() {
   const cur = useStore(s => s.cur);
   if (!cur) return null;
@@ -41,6 +56,7 @@ export function PlayerOverlay() {
 function PlayerWindow({ video }: { video: Video }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   // Y-translation to dock the mini player above the bottom tab bar.
   const MAX_Y = height - insets.bottom - TAB_BAR_HEIGHT - MINI_PLAYER_HEIGHT;
@@ -51,6 +67,7 @@ function PlayerWindow({ video }: { video: Video }) {
 
   const playerRef = useRef<any>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tcRef = useRef(0);
 
   const [wantPlay, setWantPlay] = useState(true);
@@ -59,9 +76,59 @@ function PlayerWindow({ video }: { video: Video }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(video.seconds || 0);
 
+  // Quality selector state
+  const [quality, setQuality] = useState('auto');
+  const [qualityModalOpen, setQualityModalOpen] = useState(false);
+
+  // Landscape controls visibility
+  const [showLandscapeControls, setShowLandscapeControls] = useState(true);
+
   // Resume point
   const pr = useStore.getState().prog.v[video.id];
   const startAt = pr && !pr.done && pr.p > 10 && (!pr.d || pr.p < pr.d * 0.95) ? Math.floor(pr.p) : 0;
+
+  // Load preferred quality
+  useEffect(() => {
+    AsyncStorage.getItem(QUALITY_KEY)
+      .then(saved => {
+        if (saved) {
+          setQuality(saved);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Handle Android hardware back press when in landscape mode
+  useEffect(() => {
+    const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isLandscape) {
+        ExpoPip.setOrientationPortrait();
+        return true;
+      }
+      return false;
+    });
+    return () => backSub.remove();
+  }, [isLandscape]);
+
+  // Auto-hide landscape controls
+  const resetHideTimer = () => {
+    if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
+    if (isLandscape && playing) {
+      hideControlsTimer.current = setTimeout(() => {
+        setShowLandscapeControls(false);
+      }, 3500);
+    }
+  };
+
+  useEffect(() => {
+    if (isLandscape) {
+      setShowLandscapeControls(true);
+      resetHideTimer();
+    }
+    return () => {
+      if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
+    };
+  }, [isLandscape, playing]);
 
   // Initialize native metadata when video loads
   useEffect(() => {
@@ -141,8 +208,12 @@ function PlayerWindow({ video }: { video: Video }) {
         clearInterval(tickRef.current);
         tickRef.current = null;
       }
+      if (hideControlsTimer.current) {
+        clearTimeout(hideControlsTimer.current);
+      }
       useStore.getState().commitProg();
       ExpoPip.stopPlayback();
+      ExpoPip.setOrientationPortrait();
     };
   }, []);
 
@@ -156,7 +227,6 @@ function PlayerWindow({ video }: { video: Video }) {
       setWantPlay(false);
       setEnded(true);
       setCurrentTime(totalDuration);
-      // Cleanly dismiss notification and stop background service on video completion
       ExpoPip.stopPlayback();
       return;
     }
@@ -165,9 +235,12 @@ function PlayerWindow({ video }: { video: Video }) {
       setEnded(false);
       ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
       ExpoPip.setPlaybackState(true);
+      // Apply quality on play if set
+      if (quality && quality !== 'auto') {
+        playerRef.current?.setPlaybackQuality?.(quality);
+      }
       return;
     }
-    // Ignore transient states so we don't drop the background wakelock!
     if (state === 'buffering' || state === 'unstarted') {
       return;
     }
@@ -176,7 +249,27 @@ function PlayerWindow({ video }: { video: Video }) {
     ExpoPip.setPlaybackState(false);
   };
 
+  const handleSelectQuality = async (qId: string) => {
+    setQuality(qId);
+    setQualityModalOpen(false);
+    playerRef.current?.setPlaybackQuality?.(qId);
+    const opt = QUALITY_OPTIONS.find(o => o.id === qId);
+    useStore.getState().toast(`Quality: ${opt?.label || qId}`);
+    try {
+      await AsyncStorage.setItem(QUALITY_KEY, qId);
+    } catch {}
+  };
+
+  const toggleFullscreen = () => {
+    if (isLandscape) {
+      ExpoPip.setOrientationPortrait();
+    } else {
+      ExpoPip.setOrientationLandscape();
+    }
+  };
+
   const handleReplay = () => {
+    resetHideTimer();
     playerRef.current?.seekTo(0, true);
     setCurrentTime(0);
     setEnded(false);
@@ -186,12 +279,14 @@ function PlayerWindow({ video }: { video: Video }) {
   };
 
   const handleSeekOffset = (secondsOffset: number) => {
+    resetHideTimer();
     const newPos = Math.max(0, Math.min(totalDuration || 9999, currentTime + secondsOffset));
     playerRef.current?.seekTo(newPos, true);
     setCurrentTime(newPos);
   };
 
   const handleSeekToRatio = (ratio: number) => {
+    resetHideTimer();
     if (totalDuration <= 0) return;
     const clampedRatio = Math.max(0, Math.min(1, ratio));
     const targetSec = clampedRatio * totalDuration;
@@ -200,6 +295,7 @@ function PlayerWindow({ video }: { video: Video }) {
   };
 
   const handleShare = async () => {
+    resetHideTimer();
     try {
       await Share.share({
         title: video.title,
@@ -212,6 +308,7 @@ function PlayerWindow({ video }: { video: Video }) {
   };
 
   const toggleWatched = () => {
+    resetHideTimer();
     const prog = useStore.getState().prog;
     const done = isDone(prog, video.id);
     if (done) {
@@ -232,10 +329,14 @@ function PlayerWindow({ video }: { video: Video }) {
       tickRef.current = null;
     }
     ExpoPip.stopPlayback();
+    ExpoPip.setOrientationPortrait();
     useStore.getState().closePlayer();
   };
 
   const minimize = () => {
+    if (isLandscape) {
+      ExpoPip.setOrientationPortrait();
+    }
     isMinimized.value = true;
     translateY.value = withSpring(MAX_Y, { damping: 20, stiffness: 200, mass: 0.8 });
   };
@@ -246,6 +347,7 @@ function PlayerWindow({ video }: { video: Video }) {
   };
 
   const panGesture = Gesture.Pan()
+    .enabled(!isLandscape)
     .onUpdate((e) => {
       const newY = isMinimized.value ? MAX_Y + e.translationY : e.translationY;
       translateY.value = Math.max(MIN_Y, Math.min(newY, MAX_Y));
@@ -262,52 +364,68 @@ function PlayerWindow({ video }: { video: Video }) {
     });
 
   const animatedContainerStyle = useAnimatedStyle(() => {
+    if (isLandscape) {
+      return { transform: [{ translateY: 0 }] };
+    }
     return { transform: [{ translateY: translateY.value }] };
   });
 
   const animatedExpandedStyle = useAnimatedStyle(() => {
+    if (isLandscape) {
+      return { opacity: 1, pointerEvents: 'auto' };
+    }
     const opacity = interpolate(translateY.value, [MIN_Y, MAX_Y / 2], [1, 0], Extrapolation.CLAMP);
     return { opacity, pointerEvents: opacity > 0.5 ? 'auto' : 'none' };
   });
 
   const animatedMiniStyle = useAnimatedStyle(() => {
+    if (isLandscape) {
+      return { opacity: 0, pointerEvents: 'none' };
+    }
     const opacity = interpolate(translateY.value, [MAX_Y / 2, MAX_Y], [0, 1], Extrapolation.CLAMP);
     return { opacity, pointerEvents: opacity > 0.5 ? 'auto' : 'none' };
   });
 
   const TARGET_WIDTH = 640;
   const TARGET_HEIGHT = 360;
-  const scale = width / TARGET_WIDTH;
-  const parentHeight = Math.round((width * 9) / 16);
+  
+  // Dimensions calculation
+  const parentWidth = width;
+  const parentHeight = isLandscape ? height : Math.round((width * 9) / 16);
+  const scale = isLandscape ? Math.max(width / TARGET_WIDTH, height / TARGET_HEIGHT) : width / TARGET_WIDTH;
 
   const progPct = totalDuration > 0 ? Math.min(100, (currentTime / totalDuration) * 100) : 0;
   const prog = useStore(s => s.prog);
   const done = isDone(prog, video.id);
+
+  const currentQualityOption = QUALITY_OPTIONS.find(o => o.id === quality) || QUALITY_OPTIONS[0];
 
   return (
     <View style={styles.rootWrapper} pointerEvents="box-none">
       <GestureDetector gesture={panGesture}>
         <Animated.View pointerEvents="box-none" style={[styles.container, animatedContainerStyle]}>
 
-          {/* EXPANDED PLAYER CONTENT */}
+          {/* EXPANDED / FULLSCREEN PLAYER CONTENT */}
           <Animated.View style={[StyleSheet.absoluteFill, styles.expandedBg, animatedExpandedStyle]}>
             
-            {/* Top Bar for Minimize & Close */}
-            <View style={[styles.topControlsBar, { paddingTop: Math.max(insets.top, 12) }]}>
-              <Pressable hitSlop={14} onPress={minimize} style={styles.topBtn}>
-                <Ionicons name="chevron-down" size={24} color={colors.ink} />
-              </Pressable>
-              <Text style={styles.topBarTitle} numberOfLines={1}>Now Playing</Text>
-              <Pressable hitSlop={14} onPress={closePlayer} style={styles.topBtn}>
-                <Ionicons name="close" size={24} color={colors.ink} />
-              </Pressable>
-            </View>
+            {/* Top Bar for Minimize & Close (Portrait only) */}
+            {!isLandscape && (
+              <View style={[styles.topControlsBar, { paddingTop: Math.max(insets.top, 12) }]}>
+                <Pressable hitSlop={14} onPress={minimize} style={styles.topBtn}>
+                  <Ionicons name="chevron-down" size={24} color={colors.ink} />
+                </Pressable>
+                <Text style={styles.topBarTitle} numberOfLines={1}>Now Playing</Text>
+                <Pressable hitSlop={14} onPress={closePlayer} style={styles.topBtn}>
+                  <Ionicons name="close" size={24} color={colors.ink} />
+                </Pressable>
+              </View>
+            )}
 
             {/* Video Container */}
-            <View style={{ width, height: parentHeight, backgroundColor: '#000', overflow: 'hidden' }}>
+            <View style={{ width: parentWidth, height: parentHeight, backgroundColor: '#000', overflow: 'hidden' }}>
               <View pointerEvents="none" style={{
                 position: 'absolute',
-                left: (width - TARGET_WIDTH) / 2,
+                left: (parentWidth - TARGET_WIDTH) / 2,
                 top: (parentHeight - TARGET_HEIGHT) / 2,
                 width: TARGET_WIDTH,
                 height: TARGET_HEIGHT,
@@ -340,80 +458,181 @@ function PlayerWindow({ video }: { video: Video }) {
                 />
               </View>
 
-              <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
-                {ended ? (
-                  <Pressable style={styles.orb} onPress={handleReplay}>
-                    <Ionicons name="refresh" size={32} color={colors.onAccent} />
+              {/* LANDSCAPE IMMERSIVE OVERLAY HUD */}
+              {isLandscape ? (
+                <Pressable
+                  style={styles.landscapeTouchArea}
+                  onPress={() => {
+                    setShowLandscapeControls(v => !v);
+                    resetHideTimer();
+                  }}
+                >
+                  {showLandscapeControls && (
+                    <View style={styles.landscapeHudContainer}>
+                      {/* Top Bar in Landscape */}
+                      <View style={[styles.landscapeTopBar, { paddingTop: Math.max(insets.top, 10), paddingHorizontal: Math.max(insets.left, 16) }]}>
+                        <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
+                          <Ionicons name="arrow-back" size={24} color="#fff" />
+                        </Pressable>
+                        <View style={styles.landscapeTitleWrap}>
+                          <Text style={styles.landscapeVideoTitle} numberOfLines={1}>{video.title}</Text>
+                          <Text style={styles.landscapeChannelTitle} numberOfLines={1}>{video.channelTitle}</Text>
+                        </View>
+                        <View style={styles.landscapeTopRight}>
+                          <Pressable hitSlop={10} onPress={() => setQualityModalOpen(true)} style={styles.hudBadgeBtn}>
+                            <Ionicons name="settings-outline" size={17} color="#fff" />
+                            <Text style={styles.hudBadgeText}>{currentQualityOption.short}</Text>
+                          </Pressable>
+                          <Pressable hitSlop={10} onPress={handleShare} style={styles.hudIconBtn}>
+                            <Ionicons name="share-social-outline" size={22} color="#fff" />
+                          </Pressable>
+                          <Pressable hitSlop={10} onPress={closePlayer} style={styles.hudIconBtn}>
+                            <Ionicons name="close" size={24} color="#fff" />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      {/* Center Playback Controls in Landscape */}
+                      <View style={styles.landscapeCenterControls}>
+                        <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(-10)}>
+                          <Ionicons name="play-back" size={30} color="#fff" />
+                          <Text style={styles.landscapeCenterLabel}>-10s</Text>
+                        </Pressable>
+
+                        {ended ? (
+                          <Pressable style={styles.landscapePlayOrb} onPress={handleReplay}>
+                            <Ionicons name="refresh" size={38} color="#fff" />
+                          </Pressable>
+                        ) : (
+                          <Pressable style={styles.landscapePlayOrb} onPress={() => { setWantPlay(!playing); resetHideTimer(); }}>
+                            <Ionicons name={playing ? 'pause' : 'play'} size={40} color="#fff" style={!playing ? { marginLeft: 3 } : undefined} />
+                          </Pressable>
+                        )}
+
+                        <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(10)}>
+                          <Ionicons name="play-forward" size={30} color="#fff" />
+                          <Text style={styles.landscapeCenterLabel}>+10s</Text>
+                        </Pressable>
+                      </View>
+
+                      {/* Bottom Bar in Landscape */}
+                      <View style={[styles.landscapeBottomBar, { paddingBottom: Math.max(insets.bottom, 12), paddingHorizontal: Math.max(insets.left, 18) }]}>
+                        <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(currentTime)) || '0:00'}</Text>
+                        <Pressable
+                          style={styles.landscapeProgressTouch}
+                          onPress={(e) => {
+                            const clickX = e.nativeEvent.locationX;
+                            const barWidth = width - 160;
+                            handleSeekToRatio(clickX / barWidth);
+                          }}
+                        >
+                          <View style={styles.landscapeProgressTrack}>
+                            <View style={[styles.progressFill, { width: `${progPct}%` }]} />
+                          </View>
+                          <View style={[styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]} />
+                        </Pressable>
+                        <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
+                        <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
+                          <Ionicons name="contract" size={22} color="#fff" />
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </Pressable>
+              ) : (
+                /* PORTRAIT VIDEO OVERLAY */
+                <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
+                  {ended ? (
+                    <Pressable style={styles.orb} onPress={handleReplay}>
+                      <Ionicons name="refresh" size={32} color={colors.onAccent} />
+                    </Pressable>
+                  ) : !playing ? (
+                    <View style={styles.orb}>
+                      <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
+                    </View>
+                  ) : (
+                    <View style={styles.transparentOverlay} />
+                  )}
+                </Pressable>
+              )}
+            </View>
+
+            {/* PORTRAIT CONTROLS & INFO */}
+            {!isLandscape && (
+              <>
+                {/* PROGRESS BAR & SEEK CONTROLLER */}
+                <View style={styles.progressContainer}>
+                  <Pressable
+                    style={styles.progressBarTouch}
+                    onPress={(e) => {
+                      const clickX = e.nativeEvent.locationX;
+                      const barWidth = width - 36; // 18 padding on each side
+                      handleSeekToRatio(clickX / barWidth);
+                    }}
+                  >
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${progPct}%` }]} />
+                    </View>
+                    <View style={[styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]} />
                   </Pressable>
-                ) : !playing ? (
-                  <View style={styles.orb}>
-                    <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
+                  
+                  <View style={styles.timeRow}>
+                    <Text style={styles.timeText}>{fmtDur(Math.floor(currentTime)) || '0:00'}</Text>
+                    <Text style={styles.timeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
                   </View>
-                ) : (
-                  <View style={styles.transparentOverlay} />
-                )}
-              </Pressable>
-            </View>
-
-            {/* PROGRESS BAR & SEEK CONTROLLER */}
-            <View style={styles.progressContainer}>
-              <Pressable
-                style={styles.progressBarTouch}
-                onPress={(e) => {
-                  const clickX = e.nativeEvent.locationX;
-                  const barWidth = width - 36; // 18 padding on each side
-                  handleSeekToRatio(clickX / barWidth);
-                }}
-              >
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${progPct}%` }]} />
                 </View>
-                <View style={[styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]} />
-              </Pressable>
-              
-              <View style={styles.timeRow}>
-                <Text style={styles.timeText}>{fmtDur(Math.floor(currentTime)) || '0:00'}</Text>
-                <Text style={styles.timeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
-              </View>
-            </View>
 
-            {/* CONTROLS & ACTION BUTTONS */}
-            <View style={styles.controlsBar}>
-              <Pressable style={styles.controlAction} onPress={handleReplay}>
-                <Ionicons name="refresh" size={22} color={colors.ink} />
-                <Text style={styles.controlLabel}>Restart</Text>
-              </Pressable>
+                {/* CONTROLS & ACTION BUTTONS */}
+                <View style={styles.controlsBar}>
+                  <Pressable style={styles.controlAction} onPress={handleReplay}>
+                    <Ionicons name="refresh" size={20} color={colors.ink} />
+                    <Text style={styles.controlLabel}>Restart</Text>
+                  </Pressable>
 
-              <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(-10)}>
-                <Ionicons name="play-back" size={22} color={colors.ink} />
-                <Text style={styles.controlLabel}>-10s</Text>
-              </Pressable>
+                  <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(-10)}>
+                    <Ionicons name="play-back" size={20} color={colors.ink} />
+                    <Text style={styles.controlLabel}>-10s</Text>
+                  </Pressable>
 
-              <Pressable style={styles.playPauseBtn} onPress={() => setWantPlay(!playing)}>
-                <Ionicons name={playing ? 'pause' : 'play'} size={28} color={colors.onAccent} style={!playing ? { marginLeft: 2 } : undefined} />
-              </Pressable>
+                  <Pressable style={styles.playPauseBtn} onPress={() => setWantPlay(!playing)}>
+                    <Ionicons name={playing ? 'pause' : 'play'} size={26} color={colors.onAccent} style={!playing ? { marginLeft: 2 } : undefined} />
+                  </Pressable>
 
-              <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(10)}>
-                <Ionicons name="play-forward" size={22} color={colors.ink} />
-                <Text style={styles.controlLabel}>+10s</Text>
-              </Pressable>
+                  <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(10)}>
+                    <Ionicons name="play-forward" size={20} color={colors.ink} />
+                    <Text style={styles.controlLabel}>+10s</Text>
+                  </Pressable>
 
-              <Pressable style={styles.controlAction} onPress={handleShare}>
-                <Ionicons name="share-social-outline" size={22} color={colors.ink} />
-                <Text style={styles.controlLabel}>Share</Text>
-              </Pressable>
+                  {/* Quality Button */}
+                  <Pressable style={styles.controlAction} onPress={() => setQualityModalOpen(true)}>
+                    <Ionicons name="settings-outline" size={20} color={colors.accent} />
+                    <Text style={[styles.controlLabel, { color: colors.accent, fontWeight: '700' }]}>{currentQualityOption.short}</Text>
+                  </Pressable>
 
-              <Pressable style={styles.controlAction} onPress={toggleWatched}>
-                <Ionicons name={done ? 'checkmark-circle' : 'checkmark-circle-outline'} size={22} color={done ? colors.good : colors.inkSoft} />
-                <Text style={[styles.controlLabel, done && { color: colors.good }]}>{done ? 'Watched' : 'Done'}</Text>
-              </Pressable>
-            </View>
+                  {/* Fullscreen Landscape Toggle */}
+                  <Pressable style={styles.controlAction} onPress={toggleFullscreen}>
+                    <Ionicons name="expand" size={20} color={colors.ink} />
+                    <Text style={styles.controlLabel}>Full</Text>
+                  </Pressable>
 
-            {/* Video Details Info */}
-            <View style={styles.info}>
-              <Text style={styles.title}>{video.title}</Text>
-              <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
-            </View>
+                  <Pressable style={styles.controlAction} onPress={handleShare}>
+                    <Ionicons name="share-social-outline" size={20} color={colors.ink} />
+                    <Text style={styles.controlLabel}>Share</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.controlAction} onPress={toggleWatched}>
+                    <Ionicons name={done ? 'checkmark-circle' : 'checkmark-circle-outline'} size={20} color={done ? colors.good : colors.inkSoft} />
+                    <Text style={[styles.controlLabel, done && { color: colors.good }]}>{done ? 'Watched' : 'Done'}</Text>
+                  </Pressable>
+                </View>
+
+                {/* Video Details Info */}
+                <View style={styles.info}>
+                  <Text style={styles.title}>{video.title}</Text>
+                  <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
+                </View>
+              </>
+            )}
 
           </Animated.View>
 
@@ -429,8 +648,11 @@ function PlayerWindow({ video }: { video: Video }) {
                   <Text style={styles.miniTitle} numberOfLines={1}>{video.title}</Text>
                   <Text style={styles.miniSub} numberOfLines={1}>{video.channelTitle}</Text>
                 </View>
-                <Pressable hitSlop={12} onPress={handleShare} style={styles.miniBtn}>
-                  <Ionicons name="share-social-outline" size={21} color={colors.inkSoft} />
+                <Pressable hitSlop={12} onPress={() => setQualityModalOpen(true)} style={styles.miniBtn}>
+                  <Ionicons name="settings-outline" size={20} color={colors.inkSoft} />
+                </Pressable>
+                <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.miniBtn}>
+                  <Ionicons name="expand" size={20} color={colors.inkSoft} />
                 </Pressable>
                 <Pressable hitSlop={12} onPress={() => setWantPlay(!playing)} style={styles.miniBtn}>
                   <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.ink} />
@@ -444,6 +666,60 @@ function PlayerWindow({ video }: { video: Video }) {
 
         </Animated.View>
       </GestureDetector>
+
+      {/* QUALITY SELECTION MODAL */}
+      <Modal
+        visible={qualityModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQualityModalOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setQualityModalOpen(false)}>
+          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderIcon}>
+                <Ionicons name="settings" size={20} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Playback Quality</Text>
+                <Text style={styles.modalSub}>Select your preferred resolution</Text>
+              </View>
+              <Pressable hitSlop={10} onPress={() => setQualityModalOpen(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={22} color={colors.inkSoft} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 320 }}>
+              {QUALITY_OPTIONS.map(opt => {
+                const isSelected = quality === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    style={[styles.qualityRow, isSelected && styles.qualityRowActive]}
+                    onPress={() => handleSelectQuality(opt.id)}
+                  >
+                    <View style={styles.qualityLabelWrap}>
+                      <Text style={[styles.qualityText, isSelected && styles.qualityTextActive]}>
+                        {opt.label}
+                      </Text>
+                      {opt.badge ? (
+                        <View style={[styles.badge, isSelected && styles.badgeActive]}>
+                          <Text style={[styles.badgeText, isSelected && styles.badgeTextActive]}>
+                            {opt.badge}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -477,6 +753,114 @@ const styles = StyleSheet.create({
   transparentOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.01)' },
   orb: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center' },
 
+  /* LANDSCAPE IMMERSIVE OVERLAY STYLES */
+  landscapeTouchArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  landscapeHudContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'space-between',
+  },
+  landscapeTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  landscapeTitleWrap: {
+    flex: 1,
+  },
+  landscapeVideoTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  landscapeChannelTitle: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  landscapeTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hudIconBtn: {
+    padding: 8,
+  },
+  hudBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+  },
+  hudBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  landscapeCenterControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 40,
+  },
+  landscapeCenterBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    padding: 10,
+  },
+  landscapeCenterLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  landscapePlayOrb: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  landscapeBottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  landscapeTimeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  landscapeProgressTouch: {
+    flex: 1,
+    height: 28,
+    justifyContent: 'center',
+  },
+  landscapeProgressTrack: {
+    height: 5,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2.5,
+    overflow: 'hidden',
+  },
+
+  /* PORTRAIT CONTROLS */
   progressContainer: {
     paddingHorizontal: 18,
     paddingTop: 14,
@@ -520,10 +904,10 @@ const styles = StyleSheet.create({
   controlsBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginHorizontal: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    marginHorizontal: 12,
     marginTop: 6,
     backgroundColor: colors.bg2,
     borderRadius: radius.md,
@@ -534,18 +918,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 8,
-    gap: 3,
+    paddingHorizontal: 4,
+    gap: 2,
+    minWidth: 40,
   },
   controlLabel: {
     color: colors.inkSoft,
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
   playPauseBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
@@ -562,5 +947,93 @@ const styles = StyleSheet.create({
   miniTextCont: { flex: 1, marginRight: 8 },
   miniTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '600' },
   miniSub: { color: colors.inkSoft, fontSize: 12, marginTop: 1 },
-  miniBtn: { padding: 6, marginHorizontal: 2 },
+  miniBtn: { padding: 6, marginHorizontal: 1 },
+
+  /* QUALITY MODAL SHEET */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: 20,
+    paddingBottom: 36,
+    maxHeight: '65%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  modalHeaderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bg3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalSub: {
+    color: colors.inkSoft,
+    fontSize: 12.5,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 6,
+  },
+  qualityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radius.sm,
+    marginVertical: 2,
+  },
+  qualityRowActive: {
+    backgroundColor: colors.bg2,
+  },
+  qualityLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qualityText: {
+    color: colors.inkSoft,
+    fontSize: 14.5,
+    fontWeight: '500',
+  },
+  qualityTextActive: {
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  badge: {
+    backgroundColor: colors.bg3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  badgeActive: {
+    backgroundColor: colors.accent,
+  },
+  badgeText: {
+    color: colors.inkSoft,
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  badgeTextActive: {
+    color: colors.onAccent,
+  },
 });

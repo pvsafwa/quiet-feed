@@ -9,6 +9,9 @@ interface ExpoPipInterface {
   setPlaybackState(playing: boolean): boolean;
   syncPlaybackPosition(position: number, duration: number, playing: boolean): boolean;
   stopPlayback(): boolean;
+  setOrientationLandscape(): boolean;
+  setOrientationPortrait(): boolean;
+  unlockOrientation(): boolean;
   installApk(filePath: string): boolean;
   downloadApk(url: string, fileName: string): Promise<string>;
 }
