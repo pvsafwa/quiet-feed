@@ -9,6 +9,7 @@ import { LoadingScreen } from './src/screens/LoadingScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { Toast } from './src/components/Toast';
 import { PlayerOverlay } from './src/components/PlayerOverlay';
+import { UpdateModal } from './src/components/UpdateModal';
 import { colors } from './src/theme';
 
 const navTheme = {
@@ -33,6 +34,13 @@ export default function App() {
   useEffect(() => {
     if (DEBUG_PLAYER) { useStore.getState().openPlayer(DEBUG_VIDEO); return; }
     useStore.getState().init();
+
+    // Check for updates periodically every 4 hours while app is alive
+    const interval = setInterval(() => {
+      useStore.getState().checkAppUpdate(false);
+    }, 4 * 60 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   if (DEBUG_PLAYER) {
@@ -62,6 +70,7 @@ export default function App() {
         {/* Sits above the navigator so it can float over the feed (PiP), like the web app. */}
         {user && <PlayerOverlay />}
         <Toast />
+        <UpdateModal />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

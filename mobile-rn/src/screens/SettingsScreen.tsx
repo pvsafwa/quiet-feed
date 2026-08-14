@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Image, Pressable, TextInput, ScrollView, Alert, StyleSheet } from 'react-native';
 import { useStore } from '../store';
 import { colors, radius } from '../theme';
+import { CURRENT_APP_VERSION, CURRENT_VERSION_CODE } from '../lib/updater';
 
 export function SettingsScreen() {
   const user = useStore(s => s.user);
@@ -12,6 +13,9 @@ export function SettingsScreen() {
   const resetProg = useStore(s => s.resetProg);
   const autoRefreshMins = useStore(s => s.autoRefreshMins);
   const setAutoRefresh = useStore(s => s.setAutoRefresh);
+  const checkAppUpdate = useStore(s => s.checkAppUpdate);
+  const checkingUpdate = useStore(s => s.checkingUpdate);
+
   const [chan, setChan] = useState('');
   const [adding, setAdding] = useState(false);
   const isAdmin = user?.role === 'admin';
@@ -64,6 +68,18 @@ export function SettingsScreen() {
       </View>
 
       <View style={styles.divider} />
+      <Text style={styles.h2}>App Updates</Text>
+      <View style={styles.updateCard}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.versionTitle}>Quiet Feed v{CURRENT_APP_VERSION}</Text>
+          <Text style={styles.versionSub}>Build {CURRENT_VERSION_CODE} · Release</Text>
+        </View>
+        <Pressable style={styles.btn} disabled={checkingUpdate} onPress={() => checkAppUpdate(true)}>
+          <Text style={styles.btnText}>{checkingUpdate ? 'Checking…' : 'Check for updates'}</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.divider} />
       <Text style={styles.h2}>Your progress</Text>
       <Text style={styles.hint}>Synced to your account across devices.</Text>
       <Pressable style={styles.btn} onPress={confirmReset}><Text style={styles.btnText}>Reset all progress</Text></Pressable>
@@ -95,4 +111,7 @@ const styles = StyleSheet.create({
   segOn: { backgroundColor: colors.accent },
   segText: { color: colors.inkSoft, fontWeight: '600' },
   segTextOn: { color: colors.onAccent },
+  updateCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, padding: 14, gap: 12 },
+  versionTitle: { color: colors.ink, fontSize: 14.5, fontWeight: '600' },
+  versionSub: { color: colors.inkSoft, fontSize: 12.5, marginTop: 2 },
 });

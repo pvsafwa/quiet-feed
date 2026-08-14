@@ -5,6 +5,7 @@ import type { Channel, Video, PlaylistMeta, Prog, Cursor } from './lib/types';
 import { api, ApiError, setAuthToken, type ApiUser } from './lib/api';
 import { googleSignIn, googleSignOut } from './lib/auth';
 import { normProg, emptyProg, registerPlaylist } from './lib/progress';
+import { checkForUpdate, snoozeUpdate, type AppRelease, CURRENT_APP_VERSION } from './lib/updater';
 
 const TOKEN_KEY = 'qf_token';
 const PREFS_KEY = 'qf_prefs';
@@ -46,10 +47,12 @@ export interface Store {
   progV: number;
   banner: string | null;
   toastMsg: { msg: string; err: boolean; id: number } | null;
-  // Currently-playing video. The player is a root-level overlay driven by this (same
-  // model as the web app), not a navigation screen — that's what allows it to float
-  // over the feed in PiP mode.
   cur: Video | null;
+
+  // In-app update state
+  updateRelease: AppRelease | null;
+  updateModalOpen: boolean;
+  checkingUpdate: boolean;
 
   init(): Promise<void>;
   openPlayer(v: Video): void;
@@ -77,6 +80,10 @@ export interface Store {
   toggleMonitor(p: { id: string; title: string; channelTitle: string; channelId?: string; count: number }): Promise<void>;
   markAllWatched(vids: Video[]): void;
   resetProg(): void;
+
+  checkAppUpdate(manual?: boolean): Promise<void>;
+  dismissUpdateModal(): void;
+  snoozeAppUpdate(): Promise<void>;
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -100,6 +107,10 @@ export const useStore = create<Store>((set, get) => ({
   banner: null,
   toastMsg: null,
   cur: null,
+
+  updateRelease: null,
+  updateModalOpen: false,
+  checkingUpdate: false,
 
   openPlayer(v) { set({ cur: v }); },
   closePlayer() { set({ cur: null }); get().commitProg(); },
@@ -125,6 +136,35 @@ export const useStore = create<Store>((set, get) => ({
       setAuthToken(null);
       set({ user: null, authReady: true });
     }
+
+    // Check for app updates non-blockingly
+    get().checkAppUpdate(false);
+  },
+
+  async checkAppUpdate(manual = false) {
+    if (get().checkingUpdate) return;
+    set({ checkingUpdate: true });
+    try {
+      const release = await checkForUpdate({ manual });
+      if (release) {
+        set({ updateRelease: release, updateModalOpen: true });
+      } else if (manual) {
+        get().toast(`You're up to date (v${CURRENT_APP_VERSION})`);
+      }
+    } catch (e) {
+      if (manual) get().toast('Could not check for updates', true);
+    } finally {
+      set({ checkingUpdate: false });
+    }
+  },
+
+  dismissUpdateModal() {
+    set({ updateModalOpen: false });
+  },
+
+  async snoozeAppUpdate() {
+    await snoozeUpdate(24);
+    set({ updateModalOpen: false });
   },
 
   async signIn() {

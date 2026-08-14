@@ -1,8 +1,29 @@
-const { withAndroidManifest, withMainActivity } = require('@expo/config-plugins');
+const fs = require('fs');
+const path = require('path');
+const { withAndroidManifest, withMainActivity, withDangerousMod } = require('@expo/config-plugins');
+
+function withFileProviderXml(config) {
+  return withDangerousMod(config, [
+    'android',
+    async (config) => {
+      const xmlDir = path.join(config.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res', 'xml');
+      fs.mkdirSync(xmlDir, { recursive: true });
+      const xmlContent = `<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-cache-path name="external_cache" path="." />
+    <cache-path name="internal_cache" path="." />
+    <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+</paths>`;
+      fs.writeFileSync(path.join(xmlDir, 'file_paths.xml'), xmlContent, 'utf8');
+      return config;
+    }
+  ]);
+}
 
 function withAndroidPipManifest(config) {
   return withAndroidManifest(config, async (config) => {
-    // 1. Add required permissions for foreground service
+    // 1. Add required permissions for foreground service and app update installer
     if (!config.modResults.manifest['uses-permission']) {
       config.modResults.manifest['uses-permission'] = [];
     }
@@ -10,7 +31,10 @@ function withAndroidPipManifest(config) {
     const requiredPerms = [
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
-      'android.permission.WAKE_LOCK'
+      'android.permission.WAKE_LOCK',
+      'android.permission.REQUEST_INSTALL_PACKAGES',
+      'android.permission.INTERNET',
+      'android.permission.ACCESS_NETWORK_STATE'
     ];
     requiredPerms.forEach((perm) => {
       if (!permissions.some((p) => p && p.$ && p.$['android:name'] === perm)) {
@@ -34,6 +58,30 @@ function withAndroidPipManifest(config) {
       });
     }
 
+    // 3. Add FileProvider for in-app APK installer
+    if (!application.provider) {
+      application.provider = [];
+    }
+    const hasFileProvider = application.provider.some(p => p.$['android:name'] === 'androidx.core.content.FileProvider');
+    if (!hasFileProvider) {
+      application.provider.push({
+        $: {
+          'android:name': 'androidx.core.content.FileProvider',
+          'android:authorities': 'app.quietfeed.fileprovider',
+          'android:exported': 'false',
+          'android:grantUriPermissions': 'true'
+        },
+        'meta-data': [
+          {
+            $: {
+              'android:name': 'android.support.FILE_PROVIDER_PATHS',
+              'android:resource': '@xml/file_paths'
+            }
+          }
+        ]
+      });
+    }
+
     return config;
   });
 }
@@ -43,8 +91,7 @@ function withAndroidPipMainActivity(config) {
     let src = config.modResults.contents;
 
     if (!src.includes("class AudioForegroundService")) {
-      const mainClassAnchor = 'class MainActivity : ReactActivity() {';
-      const replacement = `class AudioForegroundService : android.app.Service() {
+      const audioServiceDeclaration = `class AudioForegroundService : android.app.Service() {
   override fun onBind(intent: android.content.Intent?): android.os.IBinder? = null
   override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
     try {
@@ -83,7 +130,11 @@ function withAndroidPipMainActivity(config) {
   }
 }
 
-class MainActivity : ReactActivity() {
+`;
+
+      src = src.replace('class MainActivity : ReactActivity() {', audioServiceDeclaration + 'class MainActivity : ReactActivity() {');
+
+      const methodsInjection = `
   companion object {
     var isPlaying = false
     var currentTitle: String = "Quiet Feed"
@@ -440,11 +491,11 @@ class MainActivity : ReactActivity() {
     } catch (e: Exception) {}
     super.onDestroy()
   }
-`;
-      src = src.replace(mainClassAnchor, replacement);
 
-      const onCreateAnchor = /override fun onCreate\(savedInstanceState: Bundle\?\)\s*\{([\s\S]*?super\.onCreate\(null\)\s*)\}/;
-      const onCreateReplacement = `override fun onCreate(savedInstanceState: Bundle?) {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    // Set the theme to AppTheme BEFORE onCreate to support
+    // coloring the background, status bar, and navigation bar.
+    // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
     setMainActivity(this)
@@ -459,8 +510,18 @@ class MainActivity : ReactActivity() {
         registerReceiver(playbackReceiver, filter)
       }
     }
+  }
+`;
+
+      const onCreateAnchor = `  override fun onCreate(savedInstanceState: Bundle?) {
+    // Set the theme to AppTheme BEFORE onCreate to support
+    // coloring the background, status bar, and navigation bar.
+    // This is required for expo-splash-screen.
+    setTheme(R.style.AppTheme);
+    super.onCreate(null)
   }`;
-      src = src.replace(onCreateAnchor, onCreateReplacement);
+
+      src = src.replace(onCreateAnchor, methodsInjection.trim());
       config.modResults.contents = src;
     }
     return config;
@@ -468,5 +529,5 @@ class MainActivity : ReactActivity() {
 }
 
 module.exports = function withAndroidPip(config) {
-  return withAndroidPipMainActivity(withAndroidPipManifest(config));
+  return withFileProviderXml(withAndroidPipMainActivity(withAndroidPipManifest(config)));
 };
