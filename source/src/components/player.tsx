@@ -9,7 +9,7 @@ import { ago, views as fmtViews, fmtDur } from '../lib/format';
 import { bgPlay, bgPause, bgDestroy } from '../lib/bgaudio';
 import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause, ICheck, IGear, IRefresh } from './states';
 
-// Decorative equalizer shown when the video is hidden.
+// Decorative equalizer shown when the video is hidden (audio-only mode).
 function AudioViz({ playing, title, channel }: { playing: boolean; title: string; channel: string }) {
   return (
     <div className="audioviz">
@@ -44,9 +44,7 @@ export function PlayerModal() {
   const tickRef = useRef<any>(null);
   const tcRef = useRef(0);
 
-  // Track whether the USER explicitly paused, vs YouTube auto-pausing
-  // when the tab goes to background. We only auto-resume if the user
-  // didn't ask for the pause.
+  // Track whether the USER explicitly paused vs YouTube auto-pausing
   const userPausedRef = useRef(false);
   const autoResumeTimerRef = useRef<any>(null);
 
@@ -182,18 +180,16 @@ export function PlayerModal() {
     try {
       const S = window.YT?.PlayerState;
       if (S && p.getPlayerState() === S.PLAYING) {
-        userPausedRef.current = true;   // mark: user asked for pause
+        userPausedRef.current = true;
         p.pauseVideo();
       } else {
-        userPausedRef.current = false;  // user asked to play
+        userPausedRef.current = false;
         p.playVideo();
       }
     } catch {}
   };
 
   // ── Auto-resume when YouTube background-pauses ──
-  // YouTube's player detects page-visibility changes and auto-pauses.
-  // If the user didn't request the pause, we fight it by resuming.
   function scheduleAutoResume() {
     clearTimeout(autoResumeTimerRef.current);
     autoResumeTimerRef.current = setTimeout(() => {
@@ -239,18 +235,16 @@ export function PlayerModal() {
     };
   }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration]);
 
-  // ── Visibility-change auto-resume ──
-  // When the user comes back to the tab (or unlocks screen),
-  // if we were playing before, force-resume in case YouTube paused.
+  // ── Visibility-change: spoof + auto-resume ──
+  // Same trick as the mobile app's injected JS — when the page goes to
+  // background we try to resume playback since the user didn't pause.
   useEffect(() => {
     if (!cur) return;
     const onVis = () => {
       if (document.visibilityState === 'hidden') {
-        // Page going to background → YouTube will likely auto-pause.
-        // Schedule an auto-resume to fight it.
         if (!userPausedRef.current) scheduleAutoResume();
       } else {
-        // Page coming back → if user hadn't paused, make sure we're playing.
+        // Page came back — if user hadn't paused, ensure we're playing
         if (!userPausedRef.current && playerRef.current) {
           try {
             const S = window.YT?.PlayerState;
@@ -298,6 +292,9 @@ export function PlayerModal() {
   }, [cur?.id]);
 
   // ── YouTube player creation ──
+  // KEY: controls:0, fs:0, disablekb:1 — no YouTube UI at all.
+  // The iframe is wrapped in a pointerEvents:none container so the user
+  // can never click through to YouTube (mirroring mobile's approach).
   useEffect(() => {
     setErrMsg(null);
     setVideoOff(true);
@@ -320,7 +317,19 @@ export function PlayerModal() {
       if (cancelled) return;
       playerRef.current = new window.YT.Player(host, {
         videoId: cur.id,
-        playerVars: { rel: 0, modestbranding: 1, playsinline: 1, autoplay: 1, start: startAt, iv_load_policy: 3, origin: location.origin },
+        playerVars: {
+          rel: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          autoplay: 1,
+          start: startAt,
+          iv_load_policy: 3,
+          origin: location.origin,
+          // ── Disable ALL YouTube UI — mirror the mobile app ──
+          controls: 0,       // hide YouTube's controls bar
+          fs: 0,             // disable YouTube's fullscreen button
+          disablekb: 1,      // disable YouTube keyboard shortcuts (we have our own)
+        },
         events: {
           onReady: () => {
             if (quality && quality !== 'auto') {
@@ -333,26 +342,22 @@ export function PlayerModal() {
           onStateChange: (e: any) => {
             const S = window.YT.PlayerState;
             if (e.data === S.PLAYING) {
-              // ── PLAYING ──
               userPausedRef.current = false;
               clearTimeout(autoResumeTimerRef.current);
               startTick();
               setPlaying(true);
               setEnded(false);
-              bgPlay(); // ← start silent keepalive so Chrome tab stays alive
+              bgPlay();
             } else if (e.data === S.PAUSED) {
-              // ── PAUSED ──
               stopTick();
               setPlaying(false);
               if (!userPausedRef.current) {
                 // YouTube auto-paused (background detection). Fight it.
                 scheduleAutoResume();
-                // DON'T pause the keepalive — we want the tab to stay alive
               } else {
-                bgPause(); // user explicitly paused → safe to pause keepalive
+                bgPause();
               }
             } else if (e.data === S.ENDED) {
-              // ── ENDED ──
               stopTick();
               setPlaying(false);
               setEnded(true);
@@ -365,7 +370,6 @@ export function PlayerModal() {
                 useStore.getState().commitProg();
               }
             } else {
-              // BUFFERING, CUED, UNSTARTED, etc.
               stopTick();
               setPlaying(false);
             }
@@ -395,7 +399,7 @@ export function PlayerModal() {
       cancelled = true;
       clearTimeout(autoResumeTimerRef.current);
       stopTick();
-      bgDestroy(); // ← tear down keepalive when player closes
+      bgDestroy();
       if (playerRef.current) { try { playerRef.current.destroy(); } catch {} playerRef.current = null; }
       if (frameRef.current) frameRef.current.innerHTML = '';
     };
@@ -412,9 +416,13 @@ export function PlayerModal() {
   const done = isDone(prog, cur?.id || '');
 
   // ──────────────────────────────────────────────────────────────
-  // LAYOUT: The iframe (frameRef) is ALWAYS mounted in the DOM.
-  // In pip mode it collapses to height:0 so it's invisible but the
-  // YouTube player (and audio) stays alive.
+  // LAYOUT: The iframe (frameRef) is ALWAYS mounted. In pip mode
+  // it collapses to height:0 but stays in the DOM (audio alive).
+  //
+  // The frameRef container has pointerEvents:none — identical to
+  // the mobile app — so the user can NEVER click through to
+  // YouTube links, watermarks, or external pages. All interaction
+  // goes through our own overlay controls.
   // ──────────────────────────────────────────────────────────────
 
   return createPortal(
@@ -434,14 +442,22 @@ export function PlayerModal() {
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}
         >
 
-          {/* ━━━ IFRAME — ALWAYS MOUNTED ━━━ */}
+          {/* ━━━ IFRAME — ALWAYS MOUNTED, POINTER-EVENTS BLOCKED ━━━
+              pointerEvents:none on the frameRef means the user can never
+              interact with YouTube's embedded UI (no links, no logo, no
+              watermark). Exactly like the mobile app's approach. */}
           <div
             className="frame"
             style={pip ? { height: 0, minHeight: 0, overflow: 'hidden', border: 'none' } : undefined}
           >
-            <div ref={frameRef} style={{ width: '100%', height: '100%' }} />
+            <div ref={frameRef} style={{ width: '100%', height: '100%', pointerEvents: 'none' }} />
+
+            {/* Tap overlay — captures all taps on the video area.
+                Audio-only mode: shows AudioViz.
+                Video mode: transparent overlay that toggles play/pause on tap. */}
             {!isFile && !errMsg && (
               <>
+                {/* AUDIO-ONLY COVER */}
                 <div
                   className="audiocover"
                   style={{ opacity: videoOff ? 1 : 0, pointerEvents: videoOff ? 'auto' : 'none' }}
@@ -452,6 +468,24 @@ export function PlayerModal() {
                   <AudioViz playing={playing} title={cur.title} channel={cur.channelTitle} />
                 </div>
 
+                {/* VIDEO-VISIBLE TAP OVERLAY — transparent, blocks YouTube clicks,
+                    shows play icon when paused */}
+                {!videoOff && (
+                  <div
+                    className="video-tap-overlay"
+                    onClick={togglePlay}
+                    role="button"
+                    aria-label={playing ? 'Pause' : 'Play'}
+                  >
+                    {!playing && !ended && (
+                      <div className="video-tap-play-icon">
+                        <IPlay style={{ width: 36, height: 36, marginLeft: 4 }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* VIDEO / AUDIO TOGGLE BUTTON */}
                 <button
                   className="vidtoggle"
                   onClick={() => { if (videoOff) setShowConfirm(true); else setVideoOff(true); }}
@@ -461,6 +495,7 @@ export function PlayerModal() {
                   {videoOff ? <IVideo /> : <IVideoOff />}
                 </button>
 
+                {/* UNHIDE VIDEO CONFIRMATION */}
                 {showConfirm && (
                   <div className="qf-backdrop" style={{ zIndex: 9999, display: 'grid', placeItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }}>
                     <div className="login-card" style={{ background: 'var(--bg)', padding: '24px', borderRadius: '12px' }}>
@@ -479,6 +514,7 @@ export function PlayerModal() {
                   </div>
                 )}
 
+                {/* ENDED OVERLAY */}
                 {ended && (
                   <div className="endcover">
                     <div className="end-title">Finished</div>

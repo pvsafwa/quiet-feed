@@ -354,6 +354,12 @@
 .viz-sub{font-size:.82rem;color:var(--ink-soft)}
 @media(max-width:600px){ .viz-orb{width:70px;height:70px} .viz-orb svg{width:28px;height:28px} }
 
+/* ---- video-visible tap overlay (blocks YouTube clicks, mirrors mobile app) ---- */
+.video-tap-overlay{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;user-select:none;background:transparent}
+.video-tap-play-icon{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+
 /* ---- end-of-video cover (hides YouTube's recommended-videos grid) ---- */
 .endcover{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   background:radial-gradient(120% 120% at 50% 0,rgba(36,31,24,.95),rgba(13,11,8,.98) 70%)}
