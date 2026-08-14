@@ -393,5 +393,85 @@ h2 .role{margin-left:8px}
 .chanmgr-row{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)}
 .chanmgr-row img{width:30px;height:30px;border-radius:50%;object-fit:cover;flex:none}
 .cm-name{flex:1;min-width:0;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm-info{flex:1;min-width:0;display:flex;flex-direction:column}
+.cm-lang{font-size:.72rem;color:var(--ink-faint);margin-top:1px}
 .cm-rm{padding:6px 12px;font-size:.78rem;flex:none}
 .cm-rm:hover{border-color:var(--danger);color:var(--danger)}
+
+/* ---- language accordion in sidebar ---- */
+.sb-lang-group{margin-top:6px}
+.sb-lang-header{display:flex;align-items:center;gap:7px;padding:6px 10px;margin:2px 6px;border-radius:8px;cursor:pointer;font-size:.76rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);background:rgba(255,255,255,.02);transition:background .15s}
+.sb-lang-header:hover{background:rgba(255,255,255,.06);color:var(--ink)}
+.sb-lang-arrow{font-size:.68rem;opacity:.7}
+.sb-lang-title{flex:1}
+.sb-lang-count{font-size:.68rem;background:var(--bg-3);padding:1px 6px;border-radius:999px}
+
+/* ---- language pills in admin panel ---- */
+.lang-pill-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0}
+.lang-pill-lbl{font-size:.8rem;font-weight:600;color:var(--ink-soft);margin-right:4px}
+.lang-pill{padding:5px 12px;font-size:.78rem;border-radius:999px;background:var(--bg);border:1px solid var(--line-2);cursor:pointer;color:var(--ink-soft)}
+.lang-pill.active{background:var(--accent);border-color:var(--accent);color:#1a140b;font-weight:700}
+
+/* ---- my channels user subscription ---- */
+.my-chans-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:10px}
+.my-chans-actions{display:flex;gap:6px}
+.btn.sm{padding:4px 10px;font-size:.76rem}
+.user-chans-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.user-chan-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:var(--bg);border:1px solid var(--line);cursor:pointer;transition:border-color .15s}
+.user-chan-item.selected{border-color:var(--accent)}
+.user-chan-item img{width:28px;height:28px;border-radius:50%;object-fit:cover;flex:none}
+.user-chan-meta{flex:1;min-width:0;display:flex;flex-direction:column}
+.user-chan-title{font-size:.86rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-chan-lang{font-size:.7rem;color:var(--ink-faint)}
+
+/* ---- playlists channel picker prompt ---- */
+.pl-channel-prompt{display:flex;justify-content:center;padding:40px 16px}
+.prompt-box{max-width:540px;width:100%;text-align:center;background:var(--bg-2);border:1px solid var(--line);border-radius:18px;padding:32px 24px}
+.prompt-ic{font-size:2.4rem;margin-bottom:12px}
+.pl-chan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:20px}
+.pl-chan-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px 10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;transition:all .18s}
+.pl-chan-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.pl-chan-card img{width:46px;height:46px;border-radius:50%;object-fit:cover}
+.pl-chan-title{font-size:.82rem;font-weight:600;line-height:1.3}
+.pl-chan-lang{font-size:.68rem;background:var(--bg-3);padding:1px 6px;border-radius:999px;color:var(--ink-soft)}
+.pl-active-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-2);border:1px solid var(--line);border-radius:12px;margin-bottom:18px}
+.pl-active-info{display:flex;align-items:center;gap:10px}
+.pl-bar-av{width:34px;height:34px;border-radius:50%;object-fit:cover}
+.pl-bar-sub{font-size:.75rem;color:var(--ink-faint)}
+
+/* ---- admin dashboard on web ---- */
+.admin-dash{max-width:960px;margin:0 auto;padding-bottom:60px}
+.admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.kpi-card{background:var(--bg-2);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+.kpi-val{font-size:1.8rem;font-weight:800;color:var(--accent);font-family:"Fraunces",serif}
+.kpi-lbl{font-size:.78rem;color:var(--ink-soft);margin-top:4px;font-weight:600}
+.admin-search-wrap{position:relative;margin-bottom:20px}
+.admin-search{width:100%;background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:10px 14px;color:var(--ink);font-size:.9rem}
+.admin-users-list{display:flex;flex-direction:column;gap:12px}
+.admin-user-card{background:var(--bg-2);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.admin-user-header{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;transition:background .15s}
+.admin-user-header:hover{background:rgba(255,255,255,.02)}
+.admin-user-meta{flex:1;min-width:0}
+.admin-name-row{display:flex;align-items:center;gap:8px}
+.admin-uname{font-size:.95rem;font-weight:700}
+.admin-uemail{font-size:.8rem;color:var(--ink-soft);margin-top:1px}
+.admin-usub{font-size:.72rem;color:var(--ink-faint);margin-top:3px}
+.exp-btn{font-size:.75rem;padding:4px 8px}
+.admin-user-details{padding:0 16px 16px;background:var(--bg)}
+.admin-course-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.admin-course-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
+.admin-course-info{flex:1;min-width:0}
+.admin-ctitle{font-size:.84rem;font-weight:600}
+.admin-cchan{font-size:.72rem;color:var(--ink-faint);margin-top:1px}
+.admin-bar-wrap{height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden;margin-top:5px;max-width:260px}
+.admin-bar-fill{height:100%;background:var(--accent)}
+.admin-cpct{font-size:.78rem;font-weight:600;color:var(--ink-soft)}
+.admin-watch-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.admin-watch-row{display:flex;align-items:flex-start;gap:8px;font-size:.8rem;padding:3px 0}
+.watch-status-ic{color:var(--good);font-size:.9rem}
+.watch-info{display:flex;flex-direction:column}
+.watch-vid-id{font-size:.78rem;font-weight:600}
+.watch-meta{font-size:.72rem;color:var(--ink-faint);margin-top:1px}
+.admin-more-text{font-size:.75rem;color:var(--accent);font-weight:600;margin-top:6px}
+

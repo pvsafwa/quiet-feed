@@ -17,3 +17,5 @@ google-services.json
 # keystore itself is the only thing that can sign updates for an installed app —
 # lose it and every user must uninstall/reinstall. Back it up somewhere safe.
 /credentials
+modules/**/build/
+

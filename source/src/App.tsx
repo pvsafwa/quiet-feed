@@ -5,6 +5,7 @@ import { Header, Banner, Toast, Tabs, Sidebar, Toolbar, SettingsPanel } from './
 import { VideosTab } from './components/videos';
 import { PlaylistsTab, PlaylistDetail } from './components/playlists';
 import { ProgressTab } from './components/progress';
+import { AdminDashboard } from './components/admin';
 import { PlayerModal } from './components/player';
 import { Login, LoadingScreen } from './components/auth';
 import { EmptyState, ErrorBoundary, ITv } from './components/states';
@@ -70,6 +71,7 @@ export default function App() {
 
   let content: React.ReactNode, routeKey: string;
   if (!channels.length) { content = <NeedChannels />; routeKey = 'chan'; }
+  else if (tab === 'admin') { content = <AdminDashboard />; routeKey = 'admin'; }
   else if (tab === 'stats') { content = <ProgressTab />; routeKey = 'stats'; }
   else if (tab === 'videos') { content = <VideosTab />; routeKey = 'videos'; }
   else if (sel) { content = <PlaylistDetail />; routeKey = 'detail-' + sel.id; }

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import type { PlaylistMeta } from '../lib/types';
-import { useStore, plList, hasMorePlaylists } from '../store';
+import { useStore, plList, hasMorePlaylists, userActiveChannels } from '../store';
 import { isDone, isMon } from '../lib/progress';
 import { fmtTotal } from '../lib/format';
 import { IPlay, IList, IStar, IBack, ICheck, EmptyState, Skeleton, ITv } from './states';
@@ -59,23 +59,74 @@ function PlaylistCard({ p }: { p: PlaylistMeta }) {
 
 export function PlaylistsTab() {
   const busy = useStore(s => s.busy);
+  const filter = useStore(s => s.filter);
+  const setFilter = useStore(s => s.setFilter);
+  const activeChannels = useStore(userActiveChannels);
   const more = useStore(s => hasMorePlaylists(s));
   const compute = useStore(s => s.computePlaylistDurations);
   const runPlaylists = useStore(s => s.runPlaylists);
-  // useShallow keeps a stable array reference while contents are unchanged, so the
-  // tab doesn't re-render on every unrelated store update (and the memo bug is gone).
   const list = useStore(useShallow(s => plList(s)));
   const search = useStore(s => s.search);
+
+  useEffect(() => {
+    if (filter !== 'all') {
+      runPlaylists(true);
+    }
+  }, [filter]);
+
   useEffect(() => { if (list.length) compute(list); }, [list, compute]);
 
+  // When no single channel is chosen, prompt user to select a channel
+  if (filter === 'all') {
+    return (
+      <div className="pl-channel-prompt">
+        <div className="prompt-box">
+          <div className="prompt-ic">📂</div>
+          <h2>Select a Channel</h2>
+          <p className="hint">Choose a channel from your feed to explore its structured playlists and courses.</p>
+          <div className="pl-chan-grid">
+            {activeChannels.map(c => (
+              <div key={c.id} className="pl-chan-card" onClick={() => setFilter(c.id)}>
+                <img src={c.thumb} alt="" onError={e => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+                <div className="pl-chan-title">{c.title}</div>
+                {c.language && <span className="pl-chan-lang">{c.language}</span>}
+              </div>
+            ))}
+          </div>
+          {activeChannels.length === 0 && (
+            <p className="hint">No channels selected. Open Setup to choose channels.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const selectedChan = activeChannels.find(c => c.id === filter);
+
   if (busy && list.length === 0) return <Skeleton />;
-  if (!list.length) return <EmptyState icon={<ITv />} title={search ? 'No playlists match' : 'No playlists found'} body={search ? 'Try a different search term.' : 'These channels may not have public playlists.'} />;
   return (
     <>
-      <motion.div className="grid" variants={gridV} initial="hidden" animate="show">
-        {list.map(p => <PlaylistCard key={p.id} p={p} />)}
-      </motion.div>
-      <LoadMore show={more} onClick={() => runPlaylists(false)} />
+      <div className="pl-active-bar">
+        <div className="pl-active-info">
+          {selectedChan?.thumb && <img src={selectedChan.thumb} alt="" className="pl-bar-av" />}
+          <div>
+            <b>{selectedChan?.title || 'Selected Channel'}</b>
+            <div className="pl-bar-sub">Playlists & Courses</div>
+          </div>
+        </div>
+        <button className="btn sm" onClick={() => setFilter('all')}>Change Channel</button>
+      </div>
+
+      {!list.length ? (
+        <EmptyState icon={<ITv />} title={search ? 'No playlists match' : 'No playlists found'} body={search ? 'Try a different search term.' : 'This channel may not have public playlists.'} />
+      ) : (
+        <>
+          <motion.div className="grid" variants={gridV} initial="hidden" animate="show">
+            {list.map(p => <PlaylistCard key={p.id} p={p} />)}
+          </motion.div>
+          <LoadMore show={more} onClick={() => runPlaylists(false)} />
+        </>
+      )}
     </>
   );
 }
@@ -89,8 +140,7 @@ export function PlaylistDetail() {
   const close = useStore(s => s.closePlaylist);
   const toggle = useStore(s => s.toggleMonitor);
   const markAllWatched = useStore(s => s.markAllWatched);
-  // Guard against the brief window where this view is still mounted (animating out)
-  // after `sel` has been cleared by navigation — reading sel.* here would crash.
+
   if (!sel) return null;
   const total = selVideos.reduce((a, v) => a + (v.seconds || 0), 0);
   const ids = selVideos.map(v => v.id);
