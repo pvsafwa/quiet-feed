@@ -8,6 +8,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "quietfeed_content"
     thumb       TEXT NOT NULL DEFAULT '',
     uploads     TEXT NOT NULL,                    -- uploads playlist id (UU...)
     added_by    UUID,                             -- No strict FK to users since they are in diff DBs
+    language    TEXT NOT NULL DEFAULT 'English',
     sort_order  INTEGER NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
   );

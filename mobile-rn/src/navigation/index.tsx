@@ -13,6 +13,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { PlaylistDetailScreen } from '../screens/PlaylistDetailScreen';
 import { TrackedCoursesScreen } from '../screens/TrackedCoursesScreen';
 import { WatchHistoryScreen } from '../screens/WatchHistoryScreen';
+import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
 import { ChannelDrawer } from '../components/ChannelDrawer';
 
 const Stack = createNativeStackNavigator();
@@ -81,6 +82,7 @@ export function RootNavigator() {
       <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ title: 'Playlist' }} />
       <Stack.Screen name="TrackedCourses" component={TrackedCoursesScreen} options={{ title: 'Tracked Courses' }} />
       <Stack.Screen name="WatchHistory" component={WatchHistoryScreen} options={{ title: 'Watch History' }} />
+      <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} options={{ title: 'Admin Dashboard' }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Account & settings' }} />
     </Stack.Navigator>
   );

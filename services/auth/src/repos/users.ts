@@ -44,7 +44,12 @@ export async function getUserById(id: string): Promise<User | null> {
   return rows[0] || null;
 }
 
+export async function listAllUsers(): Promise<User[]> {
+  const { rows } = await query<User>('SELECT id, google_sub, email, name, picture, role, created_at, last_login FROM users ORDER BY last_login DESC');
+  return rows;
+}
+
 export function publicUser(u: User) {
-  return { id: u.id, email: u.email, name: u.name, picture: u.picture, role: u.role };
+  return { id: u.id, email: u.email, name: u.name, picture: u.picture, role: u.role, created_at: u.created_at, last_login: u.last_login };
 }
 export type PublicUser = ReturnType<typeof publicUser>;

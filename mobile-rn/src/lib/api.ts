@@ -1,11 +1,30 @@
 // Backend client for the native app. Uses a Bearer token (set after sign-in) instead
 // of cookies. React Native's fetch isn't bound by browser CORS, so this is simple.
 import { API_URL } from '../config';
-import type { Video, PlaylistMeta } from './types';
+import type { Video, PlaylistMeta, ChannelLanguage } from './types';
 
-export interface ApiUser { id: string; email: string; name: string; picture: string; role: 'user' | 'admin' }
-export interface ApiChannel { id: string; title: string; thumb: string; uploads: string }
-export interface PageResult { items: Video[]; nextPageToken: string | null }
+export interface ApiUser {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  role: 'user' | 'admin';
+  created_at?: string;
+  last_login?: string;
+}
+
+export interface ApiChannel {
+  id: string;
+  title: string;
+  thumb: string;
+  uploads: string;
+  language?: ChannelLanguage | string;
+}
+
+export interface PageResult {
+  items: Video[];
+  nextPageToken: string | null;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -41,7 +60,7 @@ export const api = {
   logout: () => req<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 
   channels: () => req<{ channels: ApiChannel[] }>('/channels'),
-  addChannel: (input: string) => req<{ channel: ApiChannel }>('/channels', { method: 'POST', body: JSON.stringify({ input }) }),
+  addChannel: (input: string, language: string = 'English') => req<{ channel: ApiChannel }>('/channels', { method: 'POST', body: JSON.stringify({ input, language }) }),
   removeChannel: (id: string) => req<{ ok: boolean }>(`/channels/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   uploads: (channelId: string, token = '') => req<PageResult>(`/channels/${encodeURIComponent(channelId)}/uploads${qp(token)}`),
@@ -51,4 +70,7 @@ export const api = {
 
   getProgress: () => req<{ progress: any }>('/progress'),
   putProgress: (data: unknown) => req<{ ok: boolean }>('/progress', { method: 'PUT', body: JSON.stringify(data) }),
+
+  adminUsers: () => req<{ users: ApiUser[] }>('/auth/admin/users'),
+  adminProgress: () => req<{ progressByUser: Record<string, any> }>('/progress/admin/all'),
 };

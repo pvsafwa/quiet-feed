@@ -1,16 +1,16 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml:2:13-83
-INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml:2:13-83
+ADDED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml:2:13-83
+INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml:2:13-83
 	package
-		INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml
+		INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml
 	xmlns:android
-		ADDED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml:2:23-81
+		ADDED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml:2:23-81
 uses-sdk
-INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml reason: use-sdk injection requested
-INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml
-INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml
+INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml reason: use-sdk injection requested
+INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml
+INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml
 	android:targetSdkVersion
-		INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml
+		INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml
 	android:minSdkVersion
-		INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest10803260301229771358.xml
+		INJECTED from /Volumes/Maktabah/MacBook-Air-M1/Claude-Code-Projects/quiet-feed/mobile-rn/modules/expo-pip/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest5090552900545665199.xml
