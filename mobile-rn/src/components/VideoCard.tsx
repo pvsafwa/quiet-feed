@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Image, Pressable, StyleSheet, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Video } from '../lib/types';
 import { useStore } from '../store';
@@ -14,6 +14,18 @@ export function VideoCard({ v, onPress }: { v: Video; onPress: () => void }) {
   const done = isDone(prog, v.id);
   const pct = vpct(prog, v.id);
   const isNew = lastSeen > 0 && new Date(v.published).getTime() > lastSeen;
+
+  const onShare = async () => {
+    try {
+      await Share.share({
+        title: v.title,
+        message: `${v.title}\nhttps://youtu.be/${v.id}`,
+        url: `https://youtu.be/${v.id}`,
+      });
+    } catch (e) {
+      console.warn('Share error:', e);
+    }
+  };
 
   return (
     <Pressable onPress={onPress} style={styles.card}>
@@ -37,6 +49,9 @@ export function VideoCard({ v, onPress }: { v: Video; onPress: () => void }) {
             {done ? '  ·  watched' : pct > 0 ? `  ·  ${pct}%` : ''}
           </Text>
         </View>
+        <Pressable hitSlop={12} onPress={onShare} style={styles.shareBtn}>
+          <Ionicons name="share-social-outline" size={19} color={colors.inkSoft} />
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -51,9 +66,10 @@ const styles = StyleSheet.create({
   newBadge: { position: 'absolute', left: 8, top: 8, color: colors.onAccent, backgroundColor: colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.6, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   progBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, backgroundColor: 'rgba(255,255,255,0.18)' },
   progFill: { height: '100%', backgroundColor: colors.accent },
-  meta: { flexDirection: 'row', gap: 11, paddingTop: 11 },
+  meta: { flexDirection: 'row', gap: 11, paddingTop: 11, alignItems: 'flex-start' },
   av: { width: 34, height: 34, borderRadius: 17, marginTop: 2 },
   title: { color: colors.ink, fontSize: 15, fontWeight: '600', lineHeight: 20 },
   channel: { color: colors.inkSoft, fontSize: 12.5, marginTop: 4 },
   sub: { color: colors.inkFaint, fontSize: 12.5, marginTop: 2 },
+  shareBtn: { padding: 6, marginTop: 2, borderRadius: radius.sm },
 });
