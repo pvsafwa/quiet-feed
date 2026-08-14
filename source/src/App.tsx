@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from './store';
-import { Header, Banner, Toast, Tabs, Sidebar, Toolbar, SettingsPanel } from './components/shell';
+import { Header, Banner, Toast, Tabs, Sidebar, Toolbar, SettingsPanel, BottomTabBar } from './components/shell';
 import { VideosTab } from './components/videos';
 import { PlaylistsTab, PlaylistDetail } from './components/playlists';
 import { ProgressTab } from './components/progress';
@@ -43,7 +43,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [autoRefreshMins, user, channels.length]);
 
-  // Android-style swipe: edge-swipe right opens the channel drawer; swipe left closes it.
+  // Edge-swipe right opens the channel drawer; swipe left closes it.
   useEffect(() => {
     let sx = 0, sy = 0, st = 0, tracking = false;
     const onStart = (e: TouchEvent) => {
@@ -56,7 +56,7 @@ export default function App() {
       if (Date.now() - st > 600) return;
       if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return; // mostly-horizontal only
       const s = useStore.getState();
-      if (!s.user || !s.channels.length || s.cur) return; // not while a video is open
+      if (!s.user || !s.channels.length || s.cur) return;
       if (dx > 0 && sx < 40 && !s.sidebarOpen) s.toggleSidebar(true);
       else if (dx < 0 && s.sidebarOpen) s.toggleSidebar(false);
     };
@@ -96,6 +96,7 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
         </main>
+        <BottomTabBar />
         <PlayerModal />
         <Toast />
       </div>

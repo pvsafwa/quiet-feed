@@ -541,3 +541,25 @@ export function hasMorePlaylists(s: Partial<Store> | null | undefined): boolean 
   const cursors = s?.pl?.cursors || {};
   return chans.some((c) => !cursors[c.id]?.done);
 }
+
+export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
+  const map = new Map<string, Video>();
+  const buffers = s?.vid?.buffers || {};
+  Object.values(buffers).forEach((list) => list.forEach((v) => map.set(v.id, v)));
+  (s?.selVideos || []).forEach((v) => map.set(v.id, v));
+
+  const history: Video[] = [];
+  const progV = s?.prog?.v || {};
+  map.forEach((v) => {
+    const p = progV[v.id];
+    if (p && (p.p > 0 || p.done)) history.push(v);
+  });
+
+  history.sort((a, b) => {
+    const ta = progV[a.id]?.t || 0;
+    const tb = progV[b.id]?.t || 0;
+    return tb - ta;
+  });
+
+  return history;
+}

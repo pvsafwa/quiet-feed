@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore, userActiveChannels } from '../store';
-import { IRefresh, IGear, IList, IPlay, IChart, IAlert, IMenu, IPlus, IBack } from './states';
+import { IRefresh, IGear, IList, IPlay, IChart, IAlert, IMenu, IPlus, IBack, IClose } from './states';
 import type { ChannelLanguage, Channel } from '../lib/types';
 
 const LANGUAGES: ChannelLanguage[] = ['Arabic', 'English', 'Malayalam', 'Urdu'];
@@ -12,8 +12,9 @@ export function Header() {
   const refresh = useStore(s => s.refreshCurrent);
   const setPanel = useStore(s => s.setPanel);
   const toggleSidebar = useStore(s => s.toggleSidebar);
+
   return (
-    <header>
+    <header className="site-header">
       <div className="brand">
         {ready && (
           <motion.button className="btn icon menubtn" title="Channels" aria-label="Toggle channels" onClick={() => toggleSidebar()} whileTap={{ scale: 0.9 }}>
@@ -27,10 +28,13 @@ export function Header() {
         </div>
       </div>
       <div className="actions">
-        <motion.button className="btn icon" title="Refresh" disabled={!ready || busy} onClick={() => refresh()} whileTap={{ scale: 0.92 }}>
+        <motion.button className="btn icon" title="Refresh feed" disabled={!ready || busy} onClick={() => refresh()} whileTap={{ scale: 0.92 }}>
           <IRefresh className={busy ? 'spin' : ''} />
         </motion.button>
-        <motion.button className="btn" onClick={() => setPanel()} whileTap={{ scale: 0.96 }}><IGear />Setup</motion.button>
+        <motion.button className="btn icon-txt-btn" onClick={() => setPanel(true)} whileTap={{ scale: 0.96 }}>
+          <IGear />
+          <span className="btn-txt">Settings</span>
+        </motion.button>
       </div>
     </header>
   );
@@ -45,7 +49,7 @@ export function Banner() {
         <motion.div className="banner" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
           <IAlert className="bic" />
           <div>
-            <b>That didn't work.</b><br />
+            <b>Notice:</b><br />
             {banner.split('\n').map((l, i) => <React.Fragment key={i}>{i > 0 && <br />}{l}</React.Fragment>)}
           </div>
           <button className="bx" onClick={hide} title="Dismiss">×</button>
@@ -59,6 +63,7 @@ export function Toast() {
   const toast = useStore(s => s.toastMsg);
   const [show, setShow] = useState(false);
   const timer = useRef<any>();
+
   useEffect(() => {
     if (!toast) return;
     setShow(true);
@@ -66,10 +71,36 @@ export function Toast() {
     timer.current = setTimeout(() => setShow(false), toast.err ? 5000 : 2600);
     return () => clearTimeout(timer.current);
   }, [toast]);
+
   return (
     <div className={`toast ${show ? 'show' : ''} ${toast?.err ? 'err' : ''}`}>
       <div className="bar" /><span>{toast?.msg}</span>
     </div>
+  );
+}
+
+export function BottomTabBar() {
+  const tab = useStore(s => s.tab);
+  const ready = useStore(s => !!s.user && s.channels.length > 0);
+  const switchTab = useStore(s => s.switchTab);
+  if (!ready) return null;
+
+  const TabBtn = ({ id, icon, label }: { id: any; icon: React.ReactNode; label: string }) => {
+    const active = tab === id;
+    return (
+      <button className={`bottom-tab-btn ${active ? 'active' : ''}`} onClick={() => switchTab(id)}>
+        <div className="bottom-tab-icon">{icon}</div>
+        <span className="bottom-tab-label">{label}</span>
+      </button>
+    );
+  };
+
+  return (
+    <nav className="bottom-tab-bar">
+      <TabBtn id="videos" icon={<IPlay />} label="Videos" />
+      <TabBtn id="playlists" icon={<IList />} label="Playlists" />
+      <TabBtn id="stats" icon={<IChart />} label="Progress" />
+    </nav>
   );
 }
 
@@ -88,11 +119,13 @@ export function Tabs() {
   );
 
   return (
-    <div className="tabs" style={{ display: 'inline-flex' }}>
-      <T id="videos" icon={<IPlay />} label="Videos" />
-      <T id="playlists" icon={<IList />} label="Playlists" />
-      <T id="stats" icon={<IChart />} label="Progress" />
-      {isAdmin && <T id="admin" icon={<span style={{ fontWeight: '800', fontSize: 13 }}>👑</span>} label="Admin Hub" />}
+    <div className="desktop-tabs-wrapper">
+      <div className="tabs" style={{ display: 'inline-flex' }}>
+        <T id="videos" icon={<IPlay />} label="Videos" />
+        <T id="playlists" icon={<IList />} label="Playlists" />
+        <T id="stats" icon={<IChart />} label="Progress" />
+        {isAdmin && <T id="admin" icon={<span style={{ fontWeight: '800', fontSize: 13 }}>👑</span>} label="Admin Hub" />}
+      </div>
     </div>
   );
 }
@@ -226,6 +259,7 @@ export function Toolbar() {
 
 export function SettingsPanel() {
   const open = useStore(s => s.panelOpen);
+  const setPanel = useStore(s => s.setPanel);
   const user = useStore(s => s.user);
   const channels = useStore(s => s.channels);
   const selectedChannelIds = useStore(s => s.selectedChannelIds);
@@ -238,6 +272,7 @@ export function SettingsPanel() {
   const resetProg = useStore(s => s.resetProg);
   const autoRefreshMins = useStore(s => s.autoRefreshMins);
   const setAutoRefresh = useStore(s => s.setAutoRefresh);
+  const switchTab = useStore(s => s.switchTab);
 
   const [chan, setChan] = useState('');
   const [selectedLang, setSelectedLang] = useState<ChannelLanguage>('English');
@@ -258,130 +293,162 @@ export function SettingsPanel() {
     return selectedChannelIds.includes(id);
   };
 
+  if (!open) return null;
+
   return (
-    <section className={`panel ${open ? 'open' : ''}`}>
-      <div className="panel-inner">
-        <h2>Account</h2>
-        <div className="acct">
-          {user?.picture ? <img className="acct-av" src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="acct-av ph" />}
-          <div className="acct-info">
-            <div className="acct-name">{user?.name || user?.email}</div>
-            <div className="acct-sub">{user?.email} · <span className={`role ${isAdmin ? 'admin' : ''}`}>{isAdmin ? 'Admin' : 'Member'}</span></div>
-          </div>
-          <button className="btn" onClick={() => signOut()}>Sign out</button>
+    <div className="panel-overlay" onClick={() => setPanel(false)}>
+      <section className="panel-modal" onClick={e => e.stopPropagation()}>
+        <div className="panel-header">
+          <h2>Settings & Account</h2>
+          <button className="panel-close-btn" onClick={() => setPanel(false)} title="Close">
+            <IClose />
+          </button>
         </div>
 
-        {isAdmin && (
-          <>
-            <div className="divider" />
-            <h2>Manage Catalog Channels <span className="role admin">Admin</span></h2>
-            <p className="hint">Add a channel by <b>@handle</b>, URL, or ID (<code>UC…</code>) with a language tag. It appears in the catalog for everyone.</p>
+        <div className="panel-scroll-content">
+          {/* Account Details */}
+          <div className="panel-card acct-card">
+            <div className="acct">
+              {user?.picture ? <img className="acct-av" src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="acct-av ph" />}
+              <div className="acct-info">
+                <div className="acct-name">{user?.name || user?.email}</div>
+                <div className="acct-sub">{user?.email} · <span className={`role ${isAdmin ? 'admin' : ''}`}>{isAdmin ? 'Admin' : 'Member'}</span></div>
+              </div>
+            </div>
+            <button className="btn" onClick={() => signOut()}>Sign out</button>
+          </div>
 
-            {/* Language Selector */}
-            <div className="lang-pill-row">
-              <span className="lang-pill-lbl">Language:</span>
-              {LANGUAGES.map(lang => (
-                <button
-                  key={lang}
-                  type="button"
-                  className={`btn lang-pill ${selectedLang === lang ? 'active' : ''}`}
-                  onClick={() => setSelectedLang(lang)}
-                >
-                  {lang}
+          {/* Admin Hub Card */}
+          {isAdmin && (
+            <div className="panel-card admin-hub-card" onClick={() => { setPanel(false); switchTab('admin'); }}>
+              <div className="ahc-left">
+                <span className="ahc-icon">👑</span>
+                <div>
+                  <div className="ahc-title">Admin Dashboard</div>
+                  <div className="ahc-sub">User analytics, watch times & member tracking</div>
+                </div>
+              </div>
+              <span className="ahc-arrow">›</span>
+            </div>
+          )}
+
+          {/* Manage Catalog Channels (Admin) */}
+          {isAdmin && (
+            <div className="panel-card">
+              <h3>Manage Catalog Channels <span className="role admin">Admin</span></h3>
+              <p className="hint">Add a channel by <b>@handle</b>, URL, or ID (<code>UC…</code>) with a language tag. It appears in the catalog for everyone.</p>
+
+              {/* Language Selector */}
+              <div className="lang-pill-row">
+                <span className="lang-pill-lbl">Language:</span>
+                {LANGUAGES.map(lang => (
+                  <button
+                    key={lang}
+                    type="button"
+                    className={`btn lang-pill ${selectedLang === lang ? 'active' : ''}`}
+                    onClick={() => setSelectedLang(lang)}
+                  >
+                    {lang}
+                  </button>
+                ))}
+              </div>
+
+              <div className="field">
+                <input
+                  type="text"
+                  placeholder="@handle, youtube.com/@…, or UC… ID"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={chan}
+                  onChange={e => setChan(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') onAdd(); }}
+                />
+                <button className="btn primary" onClick={onAdd} disabled={adding}>
+                  {adding ? 'Finding…' : 'Add channel'}
+                </button>
+              </div>
+
+              {channels.length > 0 && (
+                <div className="chanmgr">
+                  {channels.map(c => (
+                    <div className="chanmgr-row" key={c.id}>
+                      <img src={c.thumb} alt="" onError={e => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+                      <div className="cm-info">
+                        <span className="cm-name">{c.title}</span>
+                        <span className="cm-lang">{c.language || 'English'}</span>
+                      </div>
+                      <button
+                        className="btn cm-rm"
+                        onClick={() => {
+                          if (confirm(`Remove "${c.title}" for everyone? This will drop it from the global catalog.`)) {
+                            removeChannel(c.id);
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* User Channel Picker / My Channels */}
+          <div className="panel-card">
+            <div className="my-chans-header">
+              <div>
+                <h3>My Channels</h3>
+                <p className="hint">Choose which channels appear in your feed and side menu.</p>
+              </div>
+              <div className="my-chans-actions">
+                <button className="btn sm" onClick={selectAllChannels}>All</button>
+                <button className="btn sm" onClick={deselectAllChannels}>None</button>
+              </div>
+            </div>
+
+            <div className="user-chans-list">
+              {channels.map(c => {
+                const selected = isChannelSelected(c.id);
+                return (
+                  <div
+                    key={c.id}
+                    className={`user-chan-item ${selected ? 'selected' : ''}`}
+                    onClick={() => toggleChannelSelection(c.id)}
+                  >
+                    <input type="checkbox" checked={selected} readOnly />
+                    <img src={c.thumb} alt="" onError={e => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+                    <div className="user-chan-meta">
+                      <span className="user-chan-title">{c.title}</span>
+                      <span className="user-chan-lang">{c.language || 'English'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Auto-Refresh Preferences */}
+          <div className="panel-card">
+            <h3>Auto-refresh</h3>
+            <p className="hint">Quietly re-check channels for new uploads while the app is open.</p>
+            <div className="seg">
+              {[0, 15, 30, 60].map(m => (
+                <button key={m} className={`segbtn ${autoRefreshMins === m ? 'on' : ''}`} onClick={() => setAutoRefresh(m)}>
+                  {m === 0 ? 'Off' : `${m}m`}
                 </button>
               ))}
             </div>
-
-            <div className="field">
-              <input
-                type="text"
-                placeholder="@handle, youtube.com/@…, or UC… ID"
-                autoComplete="off"
-                spellCheck={false}
-                value={chan}
-                onChange={e => setChan(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') onAdd(); }}
-              />
-              <button className="btn primary" onClick={onAdd} disabled={adding}>
-                {adding ? 'Finding…' : 'Add channel'}
-              </button>
-            </div>
-
-            {channels.length > 0 && (
-              <div className="chanmgr">
-                {channels.map(c => (
-                  <div className="chanmgr-row" key={c.id}>
-                    <img src={c.thumb} alt="" onError={e => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
-                    <div className="cm-info">
-                      <span className="cm-name">{c.title}</span>
-                      <span className="cm-lang">{c.language || 'English'}</span>
-                    </div>
-                    <button
-                      className="btn cm-rm"
-                      onClick={() => {
-                        if (confirm(`Remove "${c.title}" for everyone? This will drop it from the global catalog.`)) {
-                          removeChannel(c.id);
-                        }
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* User Channel Picker / My Channels */}
-        <div className="divider" />
-        <div className="my-chans-header">
-          <div>
-            <h2>My Channels</h2>
-            <p className="hint">Choose which channels appear in your feed and side menu.</p>
           </div>
-          <div className="my-chans-actions">
-            <button className="btn sm" onClick={selectAllChannels}>All</button>
-            <button className="btn sm" onClick={deselectAllChannels}>None</button>
+
+          {/* Learning Progress Reset */}
+          <div className="panel-card">
+            <h3>Your learning progress</h3>
+            <p className="hint">Watch time, completed videos, resume points, streaks, and tracked courses are saved to your account and sync across your devices.</p>
+            <button className="btn" onClick={() => { if (confirm('Reset all your learning progress? This clears watch time, completed videos, resume points, streaks and tracked courses.')) resetProg(); }}>Reset all progress</button>
           </div>
         </div>
-
-        <div className="user-chans-list">
-          {channels.map(c => {
-            const selected = isChannelSelected(c.id);
-            return (
-              <div
-                key={c.id}
-                className={`user-chan-item ${selected ? 'selected' : ''}`}
-                onClick={() => toggleChannelSelection(c.id)}
-              >
-                <input type="checkbox" checked={selected} readOnly />
-                <img src={c.thumb} alt="" onError={e => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
-                <div className="user-chan-meta">
-                  <span className="user-chan-title">{c.title}</span>
-                  <span className="user-chan-lang">{c.language || 'English'}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="divider" />
-        <h2>Auto-refresh</h2>
-        <p className="hint">Quietly re-check channels for new uploads while the app is open.</p>
-        <div className="seg">
-          {[0, 15, 30, 60].map(m => (
-            <button key={m} className={`segbtn ${autoRefreshMins === m ? 'on' : ''}`} onClick={() => setAutoRefresh(m)}>
-              {m === 0 ? 'Off' : `${m}m`}
-            </button>
-          ))}
-        </div>
-
-        <div className="divider" />
-        <h2>Your learning progress</h2>
-        <p className="hint">Watch time, completed videos, resume points, streaks, and tracked courses are saved to your account and sync across your devices.</p>
-        <button className="btn" onClick={() => { if (confirm('Reset all your learning progress? This clears watch time, completed videos, resume points, streaks and tracked courses.')) resetProg(); }}>Reset all progress</button>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

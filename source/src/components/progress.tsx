@@ -1,24 +1,30 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import type { PlaylistMeta } from '../lib/types';
-import { useStore } from '../store';
+import { useStore, watchHistory } from '../store';
 import { isDone, totals, streaks, lastDays } from '../lib/progress';
-import { fmtSpan, fmtTotal } from '../lib/format';
+import { fmtSpan, fmtTotal, ago, views as fmtViews } from '../lib/format';
+import { IPlay, ICheck } from './states';
 
 export function ProgressTab() {
   useStore(s => s.progV);
   const prog = useStore(s => s.prog);
   const channels = useStore(s => s.channels);
+  const vid = useStore(s => s.vid);
+  const selVideos = useStore(s => s.selVideos);
   const openPlaylist = useStore(s => s.openPlaylist);
+  const openPlayer = useStore(s => s.openPlayer);
   const toggle = useStore(s => s.toggleMonitor);
+
+  const [activeSubTab, setActiveSubTab] = useState<'courses' | 'history'>('courses');
 
   const t = totals(prog), s = streaks(prog), days = lastDays(prog, 14);
   const maxSec = Math.max(60, ...days.map(d => d.sec));
   const cards = [
-    { v: fmtSpan(t.spent), l: 'Time spent', sub: 'with a video playing' },
-    { v: fmtSpan(t.done), l: 'Completed', sub: `${t.doneN} video${t.doneN === 1 ? '' : 's'} finished` },
+    { v: fmtSpan(t.spent), l: 'Time spent', sub: 'with video playing' },
+    { v: fmtSpan(t.done), l: `Completed (${t.doneN})`, sub: `${t.doneN} finished` },
     { v: String(t.started), l: 'In progress', sub: 'started, not finished' },
-    { v: `${s.cur} 🔥`, l: 'Day streak', sub: `best ${s.max} day${s.max === 1 ? '' : 's'}` },
+    { v: `${s.cur} 🔥`, l: `Streak · best ${s.max}`, sub: 'days in a row' },
   ];
 
   const thumbOf = (cid: string) => { const c = channels.find(x => x.id === cid); return c ? c.thumb : ''; };
@@ -27,9 +33,11 @@ export function ProgressTab() {
     const ids: string[] = pl.ids || [];
     const done = ids.filter(x => isDone(prog, x)).length;
     const tot = ids.length || meta.count || 0;
-    const spent = ids.reduce((a, vid) => a + ((prog.v[vid] && prog.v[vid].w) || 0), 0);
+    const spent = ids.reduce((a, vidId) => a + ((prog.v[vidId] && prog.v[vidId].w) || 0), 0);
     return { id, title: meta.title, channelId: meta.channelId || pl.channelId || '_', channel: meta.channelTitle || pl.channel || '', total: pl.total || 0, done, tot, pct: tot ? Math.round((done / tot) * 100) : 0, spent, ready: ids.length > 0 };
   });
+
+  const historyList = useMemo(() => watchHistory({ vid, selVideos, prog } as any), [vid, selVideos, prog]);
 
   const goCourse = (m: typeof mon[number]) => {
     const meta: PlaylistMeta = { id: m.id, title: m.title, channelId: m.channelId, channelTitle: m.channel, count: m.tot, thumb: '' };
@@ -37,13 +45,14 @@ export function ProgressTab() {
     openPlaylist(meta);
   };
 
-  // group by channel
+  // group courses by channel
   const groups: Record<string, { channel: string; items: typeof mon }> = {};
   mon.forEach(m => { (groups[m.channelId] = groups[m.channelId] || { channel: m.channel, items: [] }).items.push(m); });
   const order = Object.keys(groups).sort((a, b) => (groups[a].channel || '').localeCompare(groups[b].channel || ''));
 
   return (
-    <div>
+    <div className="progress-container">
+      {/* Stat Grid */}
       <div className="statgrid">
         {cards.map((c, i) => (
           <motion.div className="statcard" key={i} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
@@ -54,6 +63,7 @@ export function ProgressTab() {
         ))}
       </div>
 
+      {/* 14-Day Activity Chart */}
       <div className="panelbox">
         <div className="pb-h">Last 14 days</div>
         <div className="week">
@@ -61,7 +71,9 @@ export function ProgressTab() {
             const h = d.sec > 0 ? Math.max(6, Math.round((d.sec / maxSec) * 100)) : 0;
             return (
               <div className="wcol" key={d.key} title={`${d.key}: ${fmtSpan(d.sec)}`}>
-                <div className="wbar"><motion.span initial={{ height: 0 }} animate={{ height: h + '%' }} transition={{ duration: 0.5 }} style={{ display: 'block', width: '100%' }} /></div>
+                <div className="wbar">
+                  <motion.span initial={{ height: 0 }} animate={{ height: h + '%' }} transition={{ duration: 0.5 }} style={{ display: 'block', width: '100%' }} />
+                </div>
                 <div className="wlbl">{d.key.slice(8)}</div>
               </div>
             );
@@ -69,46 +81,107 @@ export function ProgressTab() {
         </div>
       </div>
 
-      {!mon.length ? (
-        <div className="panelbox">
-          <div className="pb-h">Tracked courses</div>
-          <p style={{ color: 'var(--ink-soft)', fontSize: '.9rem', lineHeight: 1.65, margin: '2px 0' }}>
-            You're not tracking any courses yet. Go to the <b>Playlists</b> tab and tap the <b>★ star</b> on a playlist (or <b>Track course</b> inside it) to monitor it. Only the courses you pick show up here — grouped by channel — so the list stays clean.
-          </p>
-        </div>
-      ) : (
-        order.map(cid => {
-          const g = groups[cid];
-          g.items.sort((a, b) => b.pct - a.pct || (a.title || '').localeCompare(b.title || ''));
-          const gDone = g.items.reduce((a, x) => a + x.done, 0);
-          const gTot = g.items.reduce((a, x) => a + x.tot, 0);
-          const gSpent = g.items.reduce((a, x) => a + x.spent, 0);
-          const thumb = thumbOf(cid);
-          return (
-            <div className="panelbox chan" key={cid}>
-              <div className="chan-h">
-                {thumb ? <img src={thumb} alt="" onError={(e) => {
-                  const t = e.target as HTMLImageElement;
-                  if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
-                }} /> : <span className="chan-dot" />}
-                <div>
-                  <div className="chan-name">{g.channel || 'Channel'}</div>
-                  <div className="chan-sub">{g.items.length} course{g.items.length === 1 ? '' : 's'} · {gDone}/{gTot} videos done{gSpent > 0 ? ` · ${fmtSpan(gSpent)} watched` : ''}</div>
-                </div>
-              </div>
-              {g.items.map(x => (
-                <div className="plrow" key={x.id} onClick={() => goCourse(x)}>
-                  <div className="plrow-top"><span className="plrow-name">{x.title}</span><span className="plrow-n">{x.ready ? `${x.done}/${x.tot}` : '…'}</span></div>
-                  <div className="selbar"><motion.span initial={{ width: 0 }} animate={{ width: x.pct + '%' }} transition={{ duration: 0.5 }} style={{ display: 'block', height: '100%' }} /></div>
-                  <div className="plrow-sub">
-                    {x.pct}% done · {fmtTotal(x.total) || '—'} total{x.spent > 0 ? ` · ${fmtSpan(x.spent)} watched` : ''}
-                    <button className="untrack" title="Stop tracking" onClick={e => { e.stopPropagation(); toggle({ id: x.id, title: x.title, channelTitle: x.channel, channelId: x.channelId, count: x.tot }); }}>untrack</button>
-                  </div>
-                </div>
-              ))}
+      {/* Sub-Tabs: Tracked Courses vs Watch History */}
+      <div className="prog-subtabs-row">
+        <button
+          className={`prog-subtab-btn ${activeSubTab === 'courses' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('courses')}
+        >
+          Tracked Courses ({mon.length})
+        </button>
+        <button
+          className={`prog-subtab-btn ${activeSubTab === 'history' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('history')}
+        >
+          Watch History ({historyList.length})
+        </button>
+      </div>
+
+      {/* Tracked Courses Tab */}
+      {activeSubTab === 'courses' && (
+        <div className="tracked-courses-wrap">
+          {!mon.length ? (
+            <div className="panelbox empty-box">
+              <div className="pb-h">No tracked courses yet</div>
+              <p style={{ color: 'var(--ink-soft)', fontSize: '.9rem', lineHeight: 1.65, margin: '6px 0 0' }}>
+                Star a playlist (or click <b>Track course</b> inside it) to follow your progress here.
+              </p>
             </div>
-          );
-        })
+          ) : (
+            order.map(cid => {
+              const g = groups[cid];
+              g.items.sort((a, b) => b.pct - a.pct || (a.title || '').localeCompare(b.title || ''));
+              const gDone = g.items.reduce((a, x) => a + x.done, 0);
+              const gTot = g.items.reduce((a, x) => a + x.tot, 0);
+              const gSpent = g.items.reduce((a, x) => a + x.spent, 0);
+              const thumb = thumbOf(cid);
+              return (
+                <div className="panelbox chan" key={cid}>
+                  <div className="chan-h">
+                    {thumb ? (
+                      <img src={thumb} alt="" onError={(e) => {
+                        const tImg = e.target as HTMLImageElement;
+                        if (tImg.src.includes('maxresdefault.jpg')) tImg.src = tImg.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                      }} />
+                    ) : <span className="chan-dot" />}
+                    <div>
+                      <div className="chan-name">{g.channel || 'Channel'}</div>
+                      <div className="chan-sub">{g.items.length} course{g.items.length === 1 ? '' : 's'} · {gDone}/{gTot} videos done{gSpent > 0 ? ` · ${fmtSpan(gSpent)} watched` : ''}</div>
+                    </div>
+                  </div>
+                  {g.items.map(x => (
+                    <div className="plrow" key={x.id} onClick={() => goCourse(x)}>
+                      <div className="plrow-top"><span className="plrow-name">{x.title}</span><span className="plrow-n">{x.ready ? `${x.done}/${x.tot}` : '…'}</span></div>
+                      <div className="selbar"><motion.span initial={{ width: 0 }} animate={{ width: x.pct + '%' }} transition={{ duration: 0.5 }} style={{ display: 'block', height: '100%' }} /></div>
+                      <div className="plrow-sub">
+                        {x.pct}% done · {fmtTotal(x.total) || '—'} total{x.spent > 0 ? ` · ${fmtSpan(x.spent)} watched` : ''}
+                        <button className="untrack" title="Stop tracking" onClick={e => { e.stopPropagation(); toggle({ id: x.id, title: x.title, channelTitle: x.channel, channelId: x.channelId, count: x.tot }); }}>untrack</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Watch History Tab */}
+      {activeSubTab === 'history' && (
+        <div className="watch-history-wrap">
+          {!historyList.length ? (
+            <div className="panelbox empty-box">
+              <div className="pb-h">No watch history</div>
+              <p style={{ color: 'var(--ink-soft)', fontSize: '.9rem', lineHeight: 1.65, margin: '6px 0 0' }}>
+                Videos you watch will appear here so you can easily resume or re-watch them.
+              </p>
+            </div>
+          ) : (
+            <div className="grid">
+              {historyList.map(v => {
+                const pr = prog.v[v.id];
+                const done = pr ? isDone(prog, v.id) : false;
+                const pct = pr && pr.d && pr.p ? Math.min(100, Math.round((pr.p / pr.d) * 100)) : 0;
+                return (
+                  <div className="card" key={v.id} onClick={() => openPlayer(v)}>
+                    <div className="c-thumb">
+                      <img src={v.thumb} alt="" loading="lazy" />
+                      {v.seconds ? <span className="dur">{fmtSpan(v.seconds)}</span> : null}
+                      {pct > 0 && !done && (
+                        <div className="c-prog"><span style={{ width: `${pct}%` }} /></div>
+                      )}
+                      {done && <span className="done-badge"><ICheck />Watched</span>}
+                    </div>
+                    <div className="c-body">
+                      <div className="c-title">{v.title}</div>
+                      <div className="c-sub">{v.channelTitle} · {ago(v.published)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
