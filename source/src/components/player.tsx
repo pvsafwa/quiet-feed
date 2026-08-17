@@ -450,22 +450,23 @@ export function PlayerModal() {
   const sidebarOpen = useStore(s => s.sidebarOpen);
   const isTabScreen = (tab === 'videos' || tab === 'playlists' || tab === 'stats') && !sel && !panelOpen;
 
+  if (!cur) return null;
+
   return createPortal(
     <AnimatePresence>
-      {cur && !pip && (
+      {!pip && (
         <motion.div key="qf-bd" className="qf-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={() => setPip(true)} />
       )}
 
-      {cur && (
-        <motion.div
-          key="qf-win"
-          className={`qf-window ${pip ? 'pip' : 'modal'} ${isTabScreen ? 'is-tab-screen' : 'is-stack-screen'} ${sidebarOpen ? 'sidebar-is-open' : ''}`}
-          initial={{ opacity: 0, scale: 0.98, y: 18 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.98, y: 18 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-        >
+      <motion.div
+        key="qf-win"
+        className={`qf-window ${pip ? 'pip' : 'modal'} ${isTabScreen ? 'is-tab-screen' : 'is-stack-screen'} ${sidebarOpen ? 'sidebar-is-open' : ''}`}
+        initial={{ opacity: 0, scale: 0.98, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 18 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+      >
 
           {/* ━━━ IFRAME — ALWAYS MOUNTED, POINTER-EVENTS BLOCKED ━━━
               pointerEvents:none on the frameRef means the user can never
@@ -700,7 +701,6 @@ export function PlayerModal() {
           )}
 
         </motion.div>
-      )}
     </AnimatePresence>,
     document.body,
   );
