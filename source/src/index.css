@@ -719,9 +719,10 @@ h2 .role{margin-left:8px}
 .qf-window.pip {
   position: fixed;
   bottom: 24px;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-left: auto;
+  margin-right: auto;
   width: min(580px, calc(100vw - 48px));
   z-index: 995;
   border-radius: 14px;
