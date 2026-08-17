@@ -265,7 +265,7 @@
 .qf-backdrop{position:fixed;inset:0;z-index:90;background:rgba(8,6,4,.78);backdrop-filter:blur(7px)}
 .qf-window{position:fixed;z-index:95}
 .qf-window.modal{inset:0;margin:auto;width:min(960px,calc(100vw - 48px));height:max-content;max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden}
-.qf-window.pip{right:18px;bottom:18px;width:clamp(280px,34vw,400px);border-radius:14px;box-shadow:0 26px 64px -16px rgba(0,0,0,.88)}
+.qf-window.pip{border-radius:14px;box-shadow:0 26px 64px -16px rgba(0,0,0,.88)}
 .qf-window .frame{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000;box-shadow:0 30px 80px -20px rgba(0,0,0,.9)}
 .qf-window.pip .frame{box-shadow:none}
 .qf-window iframe{width:100%;height:100%;border:0}
@@ -282,7 +282,6 @@
 .qf-window.pip:hover .qf-controls{opacity:1}
 @media(max-width:600px){
   .qf-window.modal{width:calc(100vw - 24px)}
-  .qf-window.pip{width:min(62vw,250px);right:12px;bottom:12px}
   .toolbar .searchbox{max-width:none}
   .plhead{flex-wrap:wrap}
   .plhead-actions{width:100%;justify-content:flex-start}
@@ -720,13 +719,17 @@ h2 .role{margin-left:8px}
 .qf-window.pip {
   position: fixed;
   bottom: 24px;
-  right: 24px;
-  width: 380px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(580px, calc(100vw - 48px));
   z-index: 995;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid var(--line);
-  box-shadow: 0 16px 36px rgba(0,0,0,0.6);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
   background: var(--bg-2);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
 }
 
 .qf-modal-top {
