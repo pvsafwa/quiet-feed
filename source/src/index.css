@@ -706,11 +706,13 @@ h2 .role{margin-left:8px}
   background: var(--bg-3);
   border-radius: 2.5px;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .player-seek-fill {
   height: 100%;
   background: var(--accent);
+  pointer-events: none;
 }
 
 .player-seek-knob {
