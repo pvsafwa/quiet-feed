@@ -12,7 +12,7 @@ const config: ExpoConfig = {
   icon: './assets/icon.png',
   android: {
     package: 'app.quietfeed',
-    versionCode: 26,
+    versionCode: 27,
     adaptiveIcon: {
       foregroundImage: './assets/icon.png',
       backgroundColor: '#14120f',
