@@ -124,70 +124,64 @@ function PlayerWindow({ video }: { video: Video }) {
 
   // Portrait seek Gesture for precision tap + hold + swipe
   const portraitSeekGesture = Gesture.Pan()
+    .runOnJS(true)
     .minDistance(0)
     .activeOffsetX([-9999, 9999])
     .onBegin((e) => {
-      'worklet';
-      runOnJS(resetHideTimer)();
+      resetHideTimer();
       const barW = portraitBarWidthRef.current || 1;
       const clampedX = Math.max(0, Math.min(barW, e.x));
       const ratio = clampedX / barW;
       const target = ratio * totalDurationRef.current;
-      runOnJS(startScrubbing)(target);
+      startScrubbing(target);
     })
     .onUpdate((e) => {
-      'worklet';
       const barW = portraitBarWidthRef.current || 1;
       const clampedX = Math.max(0, Math.min(barW, e.x));
       const ratio = clampedX / barW;
       const target = ratio * totalDurationRef.current;
-      runOnJS(updateScrubbing)(target);
+      updateScrubbing(target);
     })
     .onEnd((e) => {
-      'worklet';
       const barW = portraitBarWidthRef.current || 1;
       const clampedX = Math.max(0, Math.min(barW, e.x));
       const ratio = clampedX / barW;
       const target = ratio * totalDurationRef.current;
-      runOnJS(commitScrubbing)(target);
+      commitScrubbing(target);
     })
     .onFinalize(() => {
-      'worklet';
-      runOnJS(endScrubbing)();
+      endScrubbing();
     });
 
   // Landscape seek Gesture for precision tap + hold + swipe
   const landscapeSeekGesture = Gesture.Pan()
+    .runOnJS(true)
     .minDistance(0)
     .activeOffsetX([-9999, 9999])
     .onBegin((e) => {
-      'worklet';
-      runOnJS(resetHideTimer)();
+      resetHideTimer();
       const barW = landscapeBarWidthRef.current || 1;
       const clampedX = Math.max(0, Math.min(barW, e.x));
       const ratio = clampedX / barW;
       const target = ratio * totalDurationRef.current;
-      runOnJS(startScrubbing)(target);
+      startScrubbing(target);
     })
     .onUpdate((e) => {
-      'worklet';
       const barW = landscapeBarWidthRef.current || 1;
       const clampedX = Math.max(0, Math.min(barW, e.x));
       const ratio = clampedX / barW;
       const target = ratio * totalDurationRef.current;
-      runOnJS(updateScrubbing)(target);
+      updateScrubbing(target);
     })
     .onEnd((e) => {
-      'worklet';
       const barW = landscapeBarWidthRef.current || 1;
       const clampedX = Math.max(0, Math.min(barW, e.x));
       const ratio = clampedX / barW;
       const target = ratio * totalDurationRef.current;
-      runOnJS(commitScrubbing)(target);
+      commitScrubbing(target);
     })
     .onFinalize(() => {
-      'worklet';
-      runOnJS(endScrubbing)();
+      endScrubbing();
     });
 
   // Auto-play next video state
