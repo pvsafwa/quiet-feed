@@ -163,20 +163,42 @@ export function ProgressTab() {
                 const done = pr ? isDone(prog, v.id) : false;
                 const pct = pr && pr.d && pr.p ? Math.min(100, Math.round((pr.p / pr.d) * 100)) : 0;
                 return (
-                  <div className="card" key={v.id} onClick={() => openPlayer(v)}>
-                    <div className="c-thumb">
-                      <img src={v.thumb} alt="" loading="lazy" />
-                      {v.seconds ? <span className="dur">{fmtSpan(v.seconds)}</span> : null}
-                      {pct > 0 && !done && (
-                        <div className="c-prog"><span style={{ width: `${pct}%` }} /></div>
-                      )}
-                      {done && <span className="done-badge"><ICheck />Watched</span>}
+                  <motion.article
+                    className="card"
+                    key={v.id}
+                    onClick={() => openPlayer(v)}
+                    whileHover={{ y: -3 }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className={`thumb ${done ? 'is-done' : ''}`}>
+                      <img
+                        src={v.thumb}
+                        alt=""
+                        loading="lazy"
+                        onError={e => {
+                          const t = e.target as HTMLImageElement;
+                          if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                        }}
+                      />
+                      {v.dur ? <div className="dur">{v.dur}</div> : (v.seconds ? <div className="dur">{fmtSpan(v.seconds)}</div> : null)}
+                      {done ? <div className="donebadge"><ICheck /></div> : null}
+                      <div className="play"><span><IPlay /></span></div>
+                      {pct > 0 && !done ? <div className="progbar"><span style={{ width: `${pct}%` }} /></div> : null}
                     </div>
-                    <div className="c-body">
-                      <div className="c-title">{v.title}</div>
-                      <div className="c-sub">{v.channelTitle} · {ago(v.published)}</div>
+                    <div className="meta">
+                      {v.channelThumb ? (
+                        <img className="av" src={v.channelThumb} alt="" onError={e => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+                      ) : null}
+                      <div className="txt">
+                        <h3>{v.title}</h3>
+                        <div className="sub">
+                          <b>{v.channelTitle}</b><br />
+                          {pr?.t ? `Watched ${ago(new Date(pr.t).toISOString())}` : (v.published ? ago(v.published) : '')}
+                          {done ? <> · <span style={{ color: '#7bc47f' }}>watched</span></> : (pct > 0 ? ` · ${pct}% watched` : '')}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  </motion.article>
                 );
               })}
             </div>

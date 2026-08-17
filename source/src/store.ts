@@ -550,16 +550,26 @@ export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
 
   const history: Video[] = [];
   const progV = s?.prog?.v || {};
-  map.forEach((v) => {
-    const p = progV[v.id];
-    if (p && (p.p > 0 || p.done)) history.push(v);
-  });
 
-  history.sort((a, b) => {
-    const ta = progV[a.id]?.t || 0;
-    const tb = progV[b.id]?.t || 0;
-    return tb - ta;
-  });
+  const entries = Object.entries(progV).filter(([_, p]) => p && (p.p > 0 || p.done || p.w > 0));
+  entries.sort((a, b) => (b[1]?.t || 0) - (a[1]?.t || 0));
+
+  for (const [id, p] of entries) {
+    if (map.has(id)) {
+      history.push(map.get(id)!);
+    } else {
+      history.push({
+        id,
+        title: p.title || 'Watched Video',
+        channelId: '',
+        channelTitle: p.channelTitle || '',
+        channelThumb: '',
+        published: '',
+        thumb: p.thumb || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+        seconds: p.d || 0,
+      });
+    }
+  }
 
   return history;
 }

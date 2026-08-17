@@ -162,10 +162,10 @@ export function PlayerModal() {
       setCurrentTime(t);
       if (duration > 0 && duration !== totalDuration) setTotalDuration(duration);
 
-      addWatch(progStore, v.id, 1, duration);
-      setPos(progStore, v.id, t, duration);
+      addWatch(progStore, v, 1, duration);
+      setPos(progStore, v, t, duration);
       if (duration > 0 && t / duration >= 0.92 && !isDone(progStore, v.id)) {
-        markDone(progStore, v.id, duration);
+        markDone(progStore, v, duration);
       }
 
       tcRef.current++;
@@ -366,7 +366,7 @@ export function PlayerModal() {
               if (v) {
                 let dur = 0;
                 try { dur = playerRef.current.getDuration(); } catch {}
-                markDone(useStore.getState().prog, v.id, dur || v.seconds);
+                markDone(useStore.getState().prog, v, dur || v.seconds);
                 useStore.getState().commitProg();
               }
             } else {

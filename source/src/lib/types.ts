@@ -30,7 +30,16 @@ export interface PlaylistMeta {
   thumb: string;
 }
 
-export interface VProg { p: number; d: number; done: 0 | 1; w: number; t: number }
+export interface VProg {
+  p: number;
+  d: number;
+  done: 0 | 1;
+  w: number;
+  t: number;
+  title?: string;
+  channelTitle?: string;
+  thumb?: string;
+}
 export interface PlMembership { ids: string[]; total: number; title: string; channel: string; channelId?: string }
 export interface MonMeta { title: string; channelId?: string; channelTitle: string; count: number }
 

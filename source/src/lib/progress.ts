@@ -7,24 +7,31 @@ export function normProg(p: any): Prog {
   return p as Prog;
 }
 
-export function ensureV(prog: Prog, id: string, dur?: number): VProg {
+export function ensureV(prog: Prog, vOrId: Video | string, dur?: number): VProg {
+  const id = typeof vOrId === 'string' ? vOrId : vOrId.id;
   const v = prog.v[id] || (prog.v[id] = { p: 0, d: 0, done: 0, w: 0, t: 0 });
   if (dur) v.d = dur;
+  if (typeof vOrId === 'object') {
+    if (vOrId.title) v.title = vOrId.title;
+    if (vOrId.channelTitle) v.channelTitle = vOrId.channelTitle;
+    if (vOrId.thumb) v.thumb = vOrId.thumb;
+    if (vOrId.seconds && !v.d) v.d = vOrId.seconds;
+  }
   return v;
 }
-export function addWatch(prog: Prog, id: string, secs: number, dur?: number): void {
-  const v = ensureV(prog, id, dur);
+export function addWatch(prog: Prog, vOrId: Video | string, secs: number, dur?: number): void {
+  const v = ensureV(prog, vOrId, dur);
   v.w += secs; v.t = Date.now();
   const k = dkey();
   prog.day[k] = (prog.day[k] || 0) + secs;
 }
-export function setPos(prog: Prog, id: string, pos: number, dur?: number): void {
-  const v = ensureV(prog, id, dur);
+export function setPos(prog: Prog, vOrId: Video | string, pos: number, dur?: number): void {
+  const v = ensureV(prog, vOrId, dur);
   v.p = pos;
   v.t = Date.now();
 }
-export function markDone(prog: Prog, id: string, dur?: number): void {
-  const v = ensureV(prog, id, dur);
+export function markDone(prog: Prog, vOrId: Video | string, dur?: number): void {
+  const v = ensureV(prog, vOrId, dur);
   v.done = 1; v.t = Date.now();
 }
 export function isDone(prog: Prog, id: string): boolean {
