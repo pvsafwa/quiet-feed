@@ -10,6 +10,8 @@ import {
   TouchableWithoutFeedback,
   Share,
   BackHandler,
+  GestureResponderEvent,
+  LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -87,102 +89,104 @@ function PlayerWindow({ video }: { video: Video }) {
   const totalDurationRef = useRef(totalDuration);
   totalDurationRef.current = totalDuration;
 
-  // Portrait seek bar layout width tracking
-  const [portraitBarWidth, setPortraitBarWidth] = useState(width - 36);
-  const portraitBarWidthRef = useRef(width - 36);
-  portraitBarWidthRef.current = portraitBarWidth;
+  // Portrait seek bar layout & measurement tracking
+  const portraitBarRef = useRef<View>(null);
+  const portraitBarLeftRef = useRef<number>(18);
+  const portraitBarWidthRef = useRef<number>(width - 36);
 
-  // Landscape seek bar layout width tracking
-  const [landscapeBarWidth, setLandscapeBarWidth] = useState(width - 160);
-  const landscapeBarWidthRef = useRef(width - 160);
-  landscapeBarWidthRef.current = landscapeBarWidth;
+  // Landscape seek bar layout & measurement tracking
+  const landscapeBarRef = useRef<View>(null);
+  const landscapeBarLeftRef = useRef<number>(100);
+  const landscapeBarWidthRef = useRef<number>(width - 200);
 
-  const startScrubbing = (targetSec: number) => {
+  const measurePortraitBar = () => {
+    portraitBarRef.current?.measure((x, y, w, h, pageX) => {
+      if (pageX !== undefined && pageX > 0) portraitBarLeftRef.current = pageX;
+      if (w !== undefined && w > 0) portraitBarWidthRef.current = w;
+    });
+  };
+
+  const measureLandscapeBar = () => {
+    landscapeBarRef.current?.measure((x, y, w, h, pageX) => {
+      if (pageX !== undefined && pageX > 0) landscapeBarLeftRef.current = pageX;
+      if (w !== undefined && w > 0) landscapeBarWidthRef.current = w;
+    });
+  };
+
+  const handlePortraitTouchStart = (e: GestureResponderEvent) => {
+    resetHideTimer();
     isScrubbingRef.current = true;
     setIsScrubbing(true);
-    setScrubTime(Math.max(0, Math.min(totalDurationRef.current || 9999, targetSec)));
+    measurePortraitBar();
+    const pageX = e.nativeEvent.pageX;
+    const relX = pageX - portraitBarLeftRef.current;
+    const ratio = Math.max(0, Math.min(1, relX / (portraitBarWidthRef.current || 1)));
+    const target = ratio * (totalDurationRef.current || 0);
+    setScrubTime(target);
   };
 
-  const updateScrubbing = (targetSec: number) => {
-    setScrubTime(Math.max(0, Math.min(totalDurationRef.current || 9999, targetSec)));
+  const handlePortraitTouchMove = (e: GestureResponderEvent) => {
+    if (!isScrubbingRef.current) return;
+    resetHideTimer();
+    const pageX = e.nativeEvent.pageX;
+    const relX = pageX - portraitBarLeftRef.current;
+    const ratio = Math.max(0, Math.min(1, relX / (portraitBarWidthRef.current || 1)));
+    const target = ratio * (totalDurationRef.current || 0);
+    setScrubTime(target);
   };
 
-  const commitScrubbing = (targetSec: number) => {
-    const finalSec = Math.max(0, Math.min(totalDurationRef.current || 9999, targetSec));
+  const handlePortraitTouchEnd = (e: GestureResponderEvent) => {
+    if (!isScrubbingRef.current) return;
+    const pageX = e.nativeEvent.pageX;
+    const relX = pageX - portraitBarLeftRef.current;
+    const ratio = Math.max(0, Math.min(1, relX / (portraitBarWidthRef.current || 1)));
+    const target = ratio * (totalDurationRef.current || 0);
+    const finalSec = Math.max(0, Math.min(totalDurationRef.current || 9999, target));
     playerRef.current?.seekTo(finalSec, true);
     setCurrentTime(finalSec);
     isScrubbingRef.current = false;
     setIsScrubbing(false);
   };
 
-  const endScrubbing = () => {
-    if (isScrubbingRef.current) {
-      isScrubbingRef.current = false;
-      setIsScrubbing(false);
-    }
+  const handleLandscapeTouchStart = (e: GestureResponderEvent) => {
+    resetHideTimer();
+    isScrubbingRef.current = true;
+    setIsScrubbing(true);
+    measureLandscapeBar();
+    const pageX = e.nativeEvent.pageX;
+    const relX = pageX - landscapeBarLeftRef.current;
+    const ratio = Math.max(0, Math.min(1, relX / (landscapeBarWidthRef.current || 1)));
+    const target = ratio * (totalDurationRef.current || 0);
+    setScrubTime(target);
   };
 
-  // Portrait seek Gesture for precision tap + hold + swipe
-  const portraitSeekGesture = Gesture.Pan()
-    .runOnJS(true)
-    .minDistance(0)
-    .activeOffsetX([-9999, 9999])
-    .onBegin((e) => {
-      resetHideTimer();
-      const barW = portraitBarWidthRef.current || 1;
-      const clampedX = Math.max(0, Math.min(barW, e.x));
-      const ratio = clampedX / barW;
-      const target = ratio * totalDurationRef.current;
-      startScrubbing(target);
-    })
-    .onUpdate((e) => {
-      const barW = portraitBarWidthRef.current || 1;
-      const clampedX = Math.max(0, Math.min(barW, e.x));
-      const ratio = clampedX / barW;
-      const target = ratio * totalDurationRef.current;
-      updateScrubbing(target);
-    })
-    .onEnd((e) => {
-      const barW = portraitBarWidthRef.current || 1;
-      const clampedX = Math.max(0, Math.min(barW, e.x));
-      const ratio = clampedX / barW;
-      const target = ratio * totalDurationRef.current;
-      commitScrubbing(target);
-    })
-    .onFinalize(() => {
-      endScrubbing();
-    });
+  const handleLandscapeTouchMove = (e: GestureResponderEvent) => {
+    if (!isScrubbingRef.current) return;
+    resetHideTimer();
+    const pageX = e.nativeEvent.pageX;
+    const relX = pageX - landscapeBarLeftRef.current;
+    const ratio = Math.max(0, Math.min(1, relX / (landscapeBarWidthRef.current || 1)));
+    const target = ratio * (totalDurationRef.current || 0);
+    setScrubTime(target);
+  };
 
-  // Landscape seek Gesture for precision tap + hold + swipe
-  const landscapeSeekGesture = Gesture.Pan()
-    .runOnJS(true)
-    .minDistance(0)
-    .activeOffsetX([-9999, 9999])
-    .onBegin((e) => {
-      resetHideTimer();
-      const barW = landscapeBarWidthRef.current || 1;
-      const clampedX = Math.max(0, Math.min(barW, e.x));
-      const ratio = clampedX / barW;
-      const target = ratio * totalDurationRef.current;
-      startScrubbing(target);
-    })
-    .onUpdate((e) => {
-      const barW = landscapeBarWidthRef.current || 1;
-      const clampedX = Math.max(0, Math.min(barW, e.x));
-      const ratio = clampedX / barW;
-      const target = ratio * totalDurationRef.current;
-      updateScrubbing(target);
-    })
-    .onEnd((e) => {
-      const barW = landscapeBarWidthRef.current || 1;
-      const clampedX = Math.max(0, Math.min(barW, e.x));
-      const ratio = clampedX / barW;
-      const target = ratio * totalDurationRef.current;
-      commitScrubbing(target);
-    })
-    .onFinalize(() => {
-      endScrubbing();
-    });
+  const handleLandscapeTouchEnd = (e: GestureResponderEvent) => {
+    if (!isScrubbingRef.current) return;
+    const pageX = e.nativeEvent.pageX;
+    const relX = pageX - landscapeBarLeftRef.current;
+    const ratio = Math.max(0, Math.min(1, relX / (landscapeBarWidthRef.current || 1)));
+    const target = ratio * (totalDurationRef.current || 0);
+    const finalSec = Math.max(0, Math.min(totalDurationRef.current || 9999, target));
+    playerRef.current?.seekTo(finalSec, true);
+    setCurrentTime(finalSec);
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+  };
+
+  const handleTouchCancel = () => {
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+  };
 
   // Auto-play next video state
   const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
@@ -721,20 +725,31 @@ function PlayerWindow({ video }: { video: Video }) {
                         <Text style={[styles.landscapeTimeText, isScrubbing && { color: colors.accent }]}>
                           {fmtDur(Math.floor(displayTime)) || '0:00'}
                         </Text>
-                        <GestureDetector gesture={landscapeSeekGesture}>
-                          <View
-                            style={styles.landscapeProgressTouch}
-                            onLayout={(e) => setLandscapeBarWidth(e.nativeEvent.layout.width)}
-                          >
-                            <View style={styles.landscapeProgressTrack} pointerEvents="none">
-                              <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
-                            </View>
-                            <View
-                              style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]}
-                              pointerEvents="none"
-                            />
+                        <View
+                          ref={landscapeBarRef}
+                          style={styles.landscapeProgressTouch}
+                          onLayout={(e) => {
+                            landscapeBarWidthRef.current = e.nativeEvent.layout.width;
+                            measureLandscapeBar();
+                          }}
+                          onStartShouldSetResponder={() => true}
+                          onStartShouldSetResponderCapture={() => true}
+                          onMoveShouldSetResponder={() => true}
+                          onMoveShouldSetResponderCapture={() => true}
+                          onResponderTerminationRequest={() => false}
+                          onResponderGrant={handleLandscapeTouchStart}
+                          onResponderMove={handleLandscapeTouchMove}
+                          onResponderRelease={handleLandscapeTouchEnd}
+                          onResponderTerminate={handleTouchCancel}
+                        >
+                          <View style={styles.landscapeProgressTrack} pointerEvents="none">
+                            <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
                           </View>
-                        </GestureDetector>
+                          <View
+                            style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]}
+                            pointerEvents="none"
+                          />
+                        </View>
                         <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
                         <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
                           <Ionicons name="contract" size={22} color="#fff" />
@@ -766,20 +781,31 @@ function PlayerWindow({ video }: { video: Video }) {
               <>
                 {/* PROGRESS BAR & SEEK CONTROLLER (PRECISION TAP + HOLD + SWIPE) */}
                 <View style={styles.progressContainer}>
-                  <GestureDetector gesture={portraitSeekGesture}>
-                    <View
-                      style={styles.progressBarTouch}
-                      onLayout={(e) => setPortraitBarWidth(e.nativeEvent.layout.width)}
-                    >
-                      <View style={styles.progressTrack} pointerEvents="none">
-                        <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
-                      </View>
-                      <View
-                        style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]}
-                        pointerEvents="none"
-                      />
+                  <View
+                    ref={portraitBarRef}
+                    style={styles.progressBarTouch}
+                    onLayout={(e) => {
+                      portraitBarWidthRef.current = e.nativeEvent.layout.width;
+                      measurePortraitBar();
+                    }}
+                    onStartShouldSetResponder={() => true}
+                    onStartShouldSetResponderCapture={() => true}
+                    onMoveShouldSetResponder={() => true}
+                    onMoveShouldSetResponderCapture={() => true}
+                    onResponderTerminationRequest={() => false}
+                    onResponderGrant={handlePortraitTouchStart}
+                    onResponderMove={handlePortraitTouchMove}
+                    onResponderRelease={handlePortraitTouchEnd}
+                    onResponderTerminate={handleTouchCancel}
+                  >
+                    <View style={styles.progressTrack} pointerEvents="none">
+                      <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
                     </View>
-                  </GestureDetector>
+                    <View
+                      style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]}
+                      pointerEvents="none"
+                    />
+                  </View>
                   
                   <View style={styles.timeRow}>
                     <Text style={[styles.timeText, isScrubbing && { color: colors.accent, fontWeight: '700' }]}>
