@@ -202,8 +202,12 @@ function PlayerWindow({ video }: { video: Video }) {
   const hasPrev = playerQueueIdx > 0;
   const nextVideo = hasNext ? playerQueue[playerQueueIdx + 1] : null;
 
-  // Landscape controls visibility
+  // Landscape controls visibility & video aspect ratio fit mode
   const [showLandscapeControls, setShowLandscapeControls] = useState(true);
+  const [videoFitMode, setVideoFitMode] = useState<'fit' | 'fill'>('fit');
+  const toggleVideoFitMode = () => {
+    setVideoFitMode(prev => (prev === 'fit' ? 'fill' : 'fit'));
+  };
 
   // Handle Android hardware back press when in landscape mode
   useEffect(() => {
@@ -560,7 +564,9 @@ function PlayerWindow({ video }: { video: Video }) {
   // Dimensions calculation
   const parentWidth = width;
   const parentHeight = isLandscape ? height : Math.round((width * 9) / 16);
-  const scale = isLandscape ? Math.max(width / TARGET_WIDTH, height / TARGET_HEIGHT) : width / TARGET_WIDTH;
+  const scale = isLandscape
+    ? (videoFitMode === 'fill' ? Math.max(width / TARGET_WIDTH, height / TARGET_HEIGHT) : Math.min(width / TARGET_WIDTH, height / TARGET_HEIGHT))
+    : width / TARGET_WIDTH;
 
   const displayTime = isScrubbing ? scrubTime : currentTime;
   const progPct = totalDuration > 0 ? Math.min(100, (displayTime / totalDuration) * 100) : 0;
@@ -612,7 +618,7 @@ function PlayerWindow({ video }: { video: Video }) {
                   play={wantPlay}
                   videoId={video.id}
                   onChangeState={onChangeState}
-                  initialPlayerParams={{ rel: false, modestbranding: true, iv_load_policy: 3, start: startAt, controls: 0, fs: 0 }}
+                  initialPlayerParams={{ rel: false, modestbranding: true, iv_load_policy: 3, start: startAt, controls: 0, fs: 0, cc_load_policy: 0 }}
                   webViewProps={{
                     allowsInlineMediaPlayback: true,
                     mediaPlaybackRequiresUserAction: false,
@@ -624,6 +630,20 @@ function PlayerWindow({ video }: { video: Video }) {
                           Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
                           window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
                           document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                          
+                          var disableCC = function() {
+                            try {
+                              if (window.player && typeof window.player.unloadModule === 'function') {
+                                window.player.unloadModule('captions');
+                              }
+                              if (window.player && typeof window.player.setOption === 'function') {
+                                window.player.setOption('captions', 'track', {});
+                              }
+                            } catch(e) {}
+                          };
+                          disableCC();
+                          setTimeout(disableCC, 1000);
+                          setTimeout(disableCC, 3000);
                         } catch(e) {}
                       })();
                       true;
@@ -744,6 +764,14 @@ function PlayerWindow({ video }: { video: Video }) {
                           />
                         </View>
                         <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
+                        <Pressable
+                          hitSlop={12}
+                          onPress={toggleVideoFitMode}
+                          style={styles.hudIconBtn}
+                          accessibilityLabel={videoFitMode === 'fit' ? 'Zoom to Fill' : 'Fit to Screen (Original 16:9)'}
+                        >
+                          <Ionicons name={videoFitMode === 'fit' ? 'scan-outline' : 'contract-outline'} size={20} color="#fff" />
+                        </Pressable>
                         <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
                           <Ionicons name="contract" size={22} color="#fff" />
                         </Pressable>

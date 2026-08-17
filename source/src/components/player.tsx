@@ -366,9 +366,14 @@ export function PlayerModal() {
           controls: 0,       // hide YouTube's controls bar
           fs: 0,             // disable YouTube's fullscreen button
           disablekb: 1,      // disable YouTube keyboard shortcuts (we have our own)
+          cc_load_policy: 0, // disable auto-loaded captions/subtitles
         },
         events: {
           onReady: () => {
+            try {
+              playerRef.current?.unloadModule?.('captions');
+              playerRef.current?.setOption?.('captions', 'track', {});
+            } catch {}
             if (quality && quality !== 'auto') {
               try {
                 playerRef.current?.setPlaybackQuality?.(quality);
