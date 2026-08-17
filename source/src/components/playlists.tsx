@@ -61,7 +61,7 @@ export function PlaylistsTab() {
   const busy = useStore(s => s.busy);
   const filter = useStore(s => s.filter);
   const setFilter = useStore(s => s.setFilter);
-  const activeChannels = useStore(userActiveChannels);
+  const activeChannels = useStore(useShallow(userActiveChannels));
   const more = useStore(s => hasMorePlaylists(s));
   const compute = useStore(s => s.computePlaylistDurations);
   const runPlaylists = useStore(s => s.runPlaylists);
