@@ -10,8 +10,7 @@ import {
   TouchableWithoutFeedback,
   Share,
   BackHandler,
-  GestureResponderEvent,
-  LayoutChangeEvent,
+  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -89,104 +88,108 @@ function PlayerWindow({ video }: { video: Video }) {
   const totalDurationRef = useRef(totalDuration);
   totalDurationRef.current = totalDuration;
 
-  // Portrait seek bar layout & measurement tracking
-  const portraitBarRef = useRef<View>(null);
-  const portraitBarLeftRef = useRef<number>(18);
-  const portraitBarWidthRef = useRef<number>(width - 36);
+  // Portrait seek bar layout width tracking
+  const [portraitBarWidth, setPortraitBarWidth] = useState(width - 36);
+  const portraitBarWidthRef = useRef(width - 36);
+  portraitBarWidthRef.current = portraitBarWidth;
 
-  // Landscape seek bar layout & measurement tracking
-  const landscapeBarRef = useRef<View>(null);
-  const landscapeBarLeftRef = useRef<number>(100);
-  const landscapeBarWidthRef = useRef<number>(width - 200);
+  // Landscape seek bar layout width tracking
+  const [landscapeBarWidth, setLandscapeBarWidth] = useState(width - 160);
+  const landscapeBarWidthRef = useRef(width - 160);
+  landscapeBarWidthRef.current = landscapeBarWidth;
 
-  const measurePortraitBar = () => {
-    portraitBarRef.current?.measure((x, y, w, h, pageX) => {
-      if (pageX !== undefined && pageX > 0) portraitBarLeftRef.current = pageX;
-      if (w !== undefined && w > 0) portraitBarWidthRef.current = w;
-    });
-  };
+  const portraitStartTouchXRef = useRef<number>(0);
+  const landscapeStartTouchXRef = useRef<number>(0);
 
-  const measureLandscapeBar = () => {
-    landscapeBarRef.current?.measure((x, y, w, h, pageX) => {
-      if (pageX !== undefined && pageX > 0) landscapeBarLeftRef.current = pageX;
-      if (w !== undefined && w > 0) landscapeBarWidthRef.current = w;
-    });
-  };
+  // Portrait seek PanResponder: captures touch and tracks horizontal delta
+  const portraitSeekPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (evt) => {
+        resetHideTimer();
+        isScrubbingRef.current = true;
+        setIsScrubbing(true);
+        const barW = portraitBarWidthRef.current || 1;
+        const initialX = Math.max(0, Math.min(barW, evt.nativeEvent.locationX));
+        portraitStartTouchXRef.current = initialX;
+        const ratio = initialX / barW;
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        resetHideTimer();
+        const barW = portraitBarWidthRef.current || 1;
+        const currentX = Math.max(0, Math.min(barW, portraitStartTouchXRef.current + gestureState.dx));
+        const ratio = currentX / barW;
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const barW = portraitBarWidthRef.current || 1;
+        const currentX = Math.max(0, Math.min(barW, portraitStartTouchXRef.current + gestureState.dx));
+        const ratio = currentX / barW;
+        const target = Math.max(0, Math.min(totalDurationRef.current || 9999, ratio * totalDurationRef.current));
+        playerRef.current?.seekTo(target, true);
+        setCurrentTime(target);
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+      onPanResponderTerminate: () => {
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+    })
+  ).current;
 
-  const handlePortraitTouchStart = (e: GestureResponderEvent) => {
-    resetHideTimer();
-    isScrubbingRef.current = true;
-    setIsScrubbing(true);
-    measurePortraitBar();
-    const pageX = e.nativeEvent.pageX;
-    const relX = pageX - portraitBarLeftRef.current;
-    const ratio = Math.max(0, Math.min(1, relX / (portraitBarWidthRef.current || 1)));
-    const target = ratio * (totalDurationRef.current || 0);
-    setScrubTime(target);
-  };
-
-  const handlePortraitTouchMove = (e: GestureResponderEvent) => {
-    if (!isScrubbingRef.current) return;
-    resetHideTimer();
-    const pageX = e.nativeEvent.pageX;
-    const relX = pageX - portraitBarLeftRef.current;
-    const ratio = Math.max(0, Math.min(1, relX / (portraitBarWidthRef.current || 1)));
-    const target = ratio * (totalDurationRef.current || 0);
-    setScrubTime(target);
-  };
-
-  const handlePortraitTouchEnd = (e: GestureResponderEvent) => {
-    if (!isScrubbingRef.current) return;
-    const pageX = e.nativeEvent.pageX;
-    const relX = pageX - portraitBarLeftRef.current;
-    const ratio = Math.max(0, Math.min(1, relX / (portraitBarWidthRef.current || 1)));
-    const target = ratio * (totalDurationRef.current || 0);
-    const finalSec = Math.max(0, Math.min(totalDurationRef.current || 9999, target));
-    playerRef.current?.seekTo(finalSec, true);
-    setCurrentTime(finalSec);
-    isScrubbingRef.current = false;
-    setIsScrubbing(false);
-  };
-
-  const handleLandscapeTouchStart = (e: GestureResponderEvent) => {
-    resetHideTimer();
-    isScrubbingRef.current = true;
-    setIsScrubbing(true);
-    measureLandscapeBar();
-    const pageX = e.nativeEvent.pageX;
-    const relX = pageX - landscapeBarLeftRef.current;
-    const ratio = Math.max(0, Math.min(1, relX / (landscapeBarWidthRef.current || 1)));
-    const target = ratio * (totalDurationRef.current || 0);
-    setScrubTime(target);
-  };
-
-  const handleLandscapeTouchMove = (e: GestureResponderEvent) => {
-    if (!isScrubbingRef.current) return;
-    resetHideTimer();
-    const pageX = e.nativeEvent.pageX;
-    const relX = pageX - landscapeBarLeftRef.current;
-    const ratio = Math.max(0, Math.min(1, relX / (landscapeBarWidthRef.current || 1)));
-    const target = ratio * (totalDurationRef.current || 0);
-    setScrubTime(target);
-  };
-
-  const handleLandscapeTouchEnd = (e: GestureResponderEvent) => {
-    if (!isScrubbingRef.current) return;
-    const pageX = e.nativeEvent.pageX;
-    const relX = pageX - landscapeBarLeftRef.current;
-    const ratio = Math.max(0, Math.min(1, relX / (landscapeBarWidthRef.current || 1)));
-    const target = ratio * (totalDurationRef.current || 0);
-    const finalSec = Math.max(0, Math.min(totalDurationRef.current || 9999, target));
-    playerRef.current?.seekTo(finalSec, true);
-    setCurrentTime(finalSec);
-    isScrubbingRef.current = false;
-    setIsScrubbing(false);
-  };
-
-  const handleTouchCancel = () => {
-    isScrubbingRef.current = false;
-    setIsScrubbing(false);
-  };
+  // Landscape seek PanResponder: captures touch and tracks horizontal delta
+  const landscapeSeekPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (evt) => {
+        resetHideTimer();
+        isScrubbingRef.current = true;
+        setIsScrubbing(true);
+        const barW = landscapeBarWidthRef.current || 1;
+        const initialX = Math.max(0, Math.min(barW, evt.nativeEvent.locationX));
+        landscapeStartTouchXRef.current = initialX;
+        const ratio = initialX / barW;
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        resetHideTimer();
+        const barW = landscapeBarWidthRef.current || 1;
+        const currentX = Math.max(0, Math.min(barW, landscapeStartTouchXRef.current + gestureState.dx));
+        const ratio = currentX / barW;
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const barW = landscapeBarWidthRef.current || 1;
+        const currentX = Math.max(0, Math.min(barW, landscapeStartTouchXRef.current + gestureState.dx));
+        const ratio = currentX / barW;
+        const target = Math.max(0, Math.min(totalDurationRef.current || 9999, ratio * totalDurationRef.current));
+        playerRef.current?.seekTo(target, true);
+        setCurrentTime(target);
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+      onPanResponderTerminate: () => {
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+    })
+  ).current;
 
   // Auto-play next video state
   const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
@@ -726,21 +729,11 @@ function PlayerWindow({ video }: { video: Video }) {
                           {fmtDur(Math.floor(displayTime)) || '0:00'}
                         </Text>
                         <View
-                          ref={landscapeBarRef}
                           style={styles.landscapeProgressTouch}
                           onLayout={(e) => {
                             landscapeBarWidthRef.current = e.nativeEvent.layout.width;
-                            measureLandscapeBar();
                           }}
-                          onStartShouldSetResponder={() => true}
-                          onStartShouldSetResponderCapture={() => true}
-                          onMoveShouldSetResponder={() => true}
-                          onMoveShouldSetResponderCapture={() => true}
-                          onResponderTerminationRequest={() => false}
-                          onResponderGrant={handleLandscapeTouchStart}
-                          onResponderMove={handleLandscapeTouchMove}
-                          onResponderRelease={handleLandscapeTouchEnd}
-                          onResponderTerminate={handleTouchCancel}
+                          {...landscapeSeekPanResponder.panHandlers}
                         >
                           <View style={styles.landscapeProgressTrack} pointerEvents="none">
                             <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
@@ -782,21 +775,11 @@ function PlayerWindow({ video }: { video: Video }) {
                 {/* PROGRESS BAR & SEEK CONTROLLER (PRECISION TAP + HOLD + SWIPE) */}
                 <View style={styles.progressContainer}>
                   <View
-                    ref={portraitBarRef}
                     style={styles.progressBarTouch}
                     onLayout={(e) => {
                       portraitBarWidthRef.current = e.nativeEvent.layout.width;
-                      measurePortraitBar();
                     }}
-                    onStartShouldSetResponder={() => true}
-                    onStartShouldSetResponderCapture={() => true}
-                    onMoveShouldSetResponder={() => true}
-                    onMoveShouldSetResponderCapture={() => true}
-                    onResponderTerminationRequest={() => false}
-                    onResponderGrant={handlePortraitTouchStart}
-                    onResponderMove={handlePortraitTouchMove}
-                    onResponderRelease={handlePortraitTouchEnd}
-                    onResponderTerminate={handleTouchCancel}
+                    {...portraitSeekPanResponder.panHandlers}
                   >
                     <View style={styles.progressTrack} pointerEvents="none">
                       <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
