@@ -24,23 +24,59 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function formatWatchDateTime(ts?: number | string): string {
-  if (!ts) return 'Unknown time';
-  const d = new Date(typeof ts === 'number' ? ts : ts);
-  if (isNaN(d.getTime())) return 'Unknown time';
-  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-  const rel = ago(d.toISOString());
-  return `${dateStr} at ${timeStr} (${rel})`;
+  if (!ts) return 'Recently';
+  try {
+    const d = new Date(typeof ts === 'number' ? ts : ts);
+    if (isNaN(d.getTime())) return 'Recently';
+    const month = MONTHS[d.getMonth()] || 'Jan';
+    const day = d.getDate();
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const timeStr = `${hours}:${mins} ${ampm}`;
+    const rel = ago(d.toISOString());
+    return `${month} ${day}, ${year} at ${timeStr} (${rel})`;
+  } catch {
+    return 'Recently';
+  }
 }
 
 function formatUserLastActive(isoString?: string): string {
   if (!isoString) return 'Unknown';
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return 'Unknown';
-  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-  return `${dateStr} · ${timeStr} (${ago(isoString)})`;
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Unknown';
+    const month = MONTHS[d.getMonth()] || 'Jan';
+    const day = d.getDate();
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const timeStr = `${hours}:${mins} ${ampm}`;
+    return `${month} ${day}, ${year} · ${timeStr} (${ago(isoString)})`;
+  } catch {
+    return 'Unknown';
+  }
+}
+
+function formatJoinedDate(isoString?: string): string {
+  if (!isoString) return 'Unknown';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Unknown';
+    const month = MONTHS[d.getMonth()] || 'Jan';
+    const day = d.getDate();
+    const year = d.getFullYear();
+    return `${month} ${day}, ${year}`;
+  } catch {
+    return 'Unknown';
+  }
 }
 
 export function AdminDashboardScreen() {
@@ -85,7 +121,9 @@ export function AdminDashboardScreen() {
   };
 
   const toggleExpand = (id: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    try {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    } catch {}
     setExpandedUserId(prev => (prev === id ? null : id));
   };
 
@@ -266,9 +304,7 @@ export function AdminDashboardScreen() {
                   <View style={styles.infoLine}>
                     <Ionicons name="calendar-outline" size={14} color={colors.inkSoft} />
                     <Text style={styles.infoLabel}>Joined:</Text>
-                    <Text style={styles.infoVal}>
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'}
-                    </Text>
+                    <Text style={styles.infoVal}>{formatJoinedDate(u.created_at)}</Text>
                   </View>
                 </View>
 
