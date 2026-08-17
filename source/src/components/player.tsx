@@ -28,15 +28,14 @@ function AudioViz({ playing, title, channel }: { playing: boolean; title: string
 export function PlayerModal() {
   const cur = useStore(s => s.cur);
   const close = useStore(s => s.closePlayer);
-  const prog = useStore(s => s.prog);
-  const playerQueue = useStore(s => s.playerQueue);
-  const playerQueueIdx = useStore(s => s.playerQueueIdx);
+  const playerQueue = useStore(s => s.playerQueue) || [];
+  const playerQueueIdx = useStore(s => s.playerQueueIdx) ?? -1;
   const playNext = useStore(s => s.playNext);
   const playPrev = useStore(s => s.playPrev);
 
-  const hasNext = playerQueueIdx >= 0 && playerQueueIdx + 1 < playerQueue.length;
+  const hasNext = playerQueueIdx >= 0 && Array.isArray(playerQueue) && playerQueueIdx + 1 < playerQueue.length;
   const hasPrev = playerQueueIdx > 0;
-  const nextVideo = hasNext ? playerQueue[playerQueueIdx + 1] : null;
+  const nextVideo = hasNext && Array.isArray(playerQueue) ? playerQueue[playerQueueIdx + 1] : null;
 
   const frameRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
@@ -384,7 +383,9 @@ export function PlayerModal() {
                 useStore.getState().commitProg();
               }
               const state = useStore.getState();
-              const hasMore = state.playerQueueIdx >= 0 && state.playerQueueIdx + 1 < state.playerQueue.length;
+              const q = state.playerQueue || [];
+              const qIdx = state.playerQueueIdx ?? -1;
+              const hasMore = qIdx >= 0 && qIdx + 1 < q.length;
               if (hasMore) {
                 setAutoPlayCountdown(4);
               }
