@@ -464,7 +464,14 @@ h2 .role{margin-left:8px}
 .admin-uemail{font-size:.8rem;color:var(--ink-soft);margin-top:1px}
 .admin-usub{font-size:.72rem;color:var(--ink-faint);margin-top:3px}
 .exp-btn{font-size:.75rem;padding:4px 8px}
+.admin-loc-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(232,161,77,.12);border:1px solid rgba(232,161,77,.25);padding:2px 8px;border-radius:6px;margin:3px 0 2px;max-width:max-content}
+.admin-loc-badge .loc-pin{font-size:11px}
+.admin-loc-badge .loc-txt{font-size:.72rem;font-weight:600;color:var(--accent)}
 .admin-user-details{padding:0 16px 16px;background:var(--bg)}
+.admin-info-box{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.admin-info-line{display:flex;align-items:center;gap:8px;font-size:.78rem}
+.admin-info-line .info-lbl{color:var(--ink-soft);font-weight:600;min-width:90px}
+.admin-info-line .info-val{color:var(--ink);font-weight:500}
 .admin-course-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .admin-course-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
 .admin-course-info{flex:1;min-width:0}
@@ -473,12 +480,17 @@ h2 .role{margin-left:8px}
 .admin-bar-wrap{height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden;margin-top:5px;max-width:260px}
 .admin-bar-fill{height:100%;background:var(--accent)}
 .admin-cpct{font-size:.78rem;font-weight:600;color:var(--ink-soft)}
-.admin-watch-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-.admin-watch-row{display:flex;align-items:flex-start;gap:8px;font-size:.8rem;padding:3px 0}
-.watch-status-ic{color:var(--good);font-size:.9rem}
-.watch-info{display:flex;flex-direction:column}
-.watch-vid-id{font-size:.78rem;font-weight:600}
-.watch-meta{font-size:.72rem;color:var(--ink-faint);margin-top:1px}
+.admin-rich-watch-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.admin-rich-watch-card{display:flex;align-items:center;gap:12px;padding:8px 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;transition:background .15s}
+.admin-rich-watch-card:hover{background:var(--bg-3)}
+.admin-watch-thumb{width:72px;height:42px;border-radius:6px;object-fit:cover;flex:none;background:var(--bg-3);border:1px solid var(--line)}
+.admin-watch-main{flex:1;min-width:0}
+.admin-watch-title{font-size:.82rem;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;color:var(--ink)}
+.admin-watch-chan{font-size:.72rem;color:var(--ink-faint);margin-top:1px}
+.admin-watch-meta-row{display:flex;align-items:center;gap:8px;margin-top:4px}
+.admin-prog-badge{font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(232,161,77,.18);color:var(--accent)}
+.admin-prog-badge.done{background:rgba(95,181,106,.2);color:#7bc47f}
+.admin-watch-time{font-size:.7rem;color:var(--ink-faint)}
 .admin-more-text{font-size:.75rem;color:var(--accent);font-weight:600;margin-top:6px}
 
 /* ==========================================================================

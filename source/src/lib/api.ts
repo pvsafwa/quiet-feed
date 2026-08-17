@@ -20,10 +20,16 @@ export class ApiError extends Error {
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   let r: Response;
+  const headers: Record<string, string> = {};
+  if (opts.body) headers['Content-Type'] = 'application/json';
+  try {
+    const tz = typeof Intl !== 'undefined' && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+    if (tz) headers['x-timezone'] = tz;
+  } catch {}
   try {
     r = await fetch('/api' + path, {
       credentials: 'include',
-      headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: { ...headers, ...(opts.headers as any) },
       ...opts,
     });
   } catch {

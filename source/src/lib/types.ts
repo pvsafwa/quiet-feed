@@ -56,6 +56,8 @@ export interface AdminUserData {
   name: string;
   picture: string;
   role: 'user' | 'admin';
+  location?: string;
+  timezone?: string;
   created_at: string;
   last_login: string;
   progress?: Prog;

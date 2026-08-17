@@ -3,7 +3,61 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../store';
 import { ago, fmtDur } from '../lib/format';
 import type { AdminUserData } from '../lib/types';
-import { IChart, IPlay, IList } from './states';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatWatchDateTime(ts?: number | string): string {
+  if (!ts) return 'Recently';
+  try {
+    const d = new Date(typeof ts === 'number' ? ts : ts);
+    if (isNaN(d.getTime())) return 'Recently';
+    const month = MONTHS[d.getMonth()] || 'Jan';
+    const day = d.getDate();
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const timeStr = `${hours}:${mins} ${ampm}`;
+    const rel = ago(d.toISOString());
+    return `${month} ${day}, ${year} at ${timeStr} (${rel})`;
+  } catch {
+    return 'Recently';
+  }
+}
+
+function formatUserLastActive(isoString?: string): string {
+  if (!isoString) return 'Unknown';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Unknown';
+    const month = MONTHS[d.getMonth()] || 'Jan';
+    const day = d.getDate();
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const timeStr = `${hours}:${mins} ${ampm}`;
+    return `${month} ${day}, ${year} · ${timeStr} (${ago(isoString)})`;
+  } catch {
+    return 'Unknown';
+  }
+}
+
+function formatJoinedDate(isoString?: string): string {
+  if (!isoString) return 'Unknown';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Unknown';
+    const month = MONTHS[d.getMonth()] || 'Jan';
+    const day = d.getDate();
+    const year = d.getFullYear();
+    return `${month} ${day}, ${year}`;
+  } catch {
+    return 'Unknown';
+  }
+}
 
 export function AdminDashboard() {
   const fetchAdminData = useStore(s => s.fetchAdminDashboardData);
@@ -11,6 +65,18 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  // Video lookup map from in-memory buffers for fallback metadata resolution
+  const videoLookup = useMemo(() => {
+    const map = new Map<string, { title: string; channelTitle: string; thumb: string }>();
+    const buffers = useStore.getState().vid?.buffers || {};
+    Object.values(buffers).forEach(list => {
+      (list || []).forEach(v => {
+        if (v && v.id) map.set(v.id, { title: v.title, channelTitle: v.channelTitle, thumb: v.thumb });
+      });
+    });
+    return map;
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -37,7 +103,9 @@ export function AdminDashboard() {
     if (!q) return users;
     return users.filter(u =>
       (u.name || '').toLowerCase().includes(q) ||
-      (u.email || '').toLowerCase().includes(q)
+      (u.email || '').toLowerCase().includes(q) ||
+      (u.location || '').toLowerCase().includes(q) ||
+      (u.timezone || '').toLowerCase().includes(q)
     );
   }, [users, search]);
 
@@ -71,7 +139,7 @@ export function AdminDashboard() {
       <div className="admin-head">
         <div>
           <h2>Admin Analytics & Tracking</h2>
-          <p className="hint">Registered members, live watch metrics, and course progress.</p>
+          <p className="hint">Registered members, geographic location, live watch metrics, and course progress.</p>
         </div>
         <button className="btn" onClick={loadData} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh stats'}
@@ -103,7 +171,7 @@ export function AdminDashboard() {
         <input
           type="text"
           className="admin-search"
-          placeholder="Search members by name or email…"
+          placeholder="Search members by name, email, location, timezone…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -116,7 +184,10 @@ export function AdminDashboard() {
           const isExpanded = expandedUserId === u.id;
           const prog = u.progress;
           const vEntries = Object.entries(prog?.v || {});
-          const watchedEntries = vEntries.filter(([_, v]) => v.done || v.p > 10);
+          // Sort watch entries descending (most recently watched first)
+          const watchedEntries = vEntries
+            .filter(([_, v]) => v.done || v.p > 10)
+            .sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
           const monitoredCourses = Object.entries(prog?.mon || {});
 
           return (
@@ -135,6 +206,19 @@ export function AdminDashboard() {
                     </span>
                   </div>
                   <div className="admin-uemail">{u.email}</div>
+
+                  {/* Location & Timezone Badge */}
+                  {(u.location || u.timezone) ? (
+                    <div className="admin-loc-badge">
+                      <span className="loc-pin">📍</span>
+                      <span className="loc-txt">
+                        {u.location ? u.location : ''}
+                        {u.location && u.timezone ? ' · ' : ''}
+                        {u.timezone ? u.timezone : ''}
+                      </span>
+                    </div>
+                  ) : null}
+
                   <div className="admin-usub">
                     Last active: {u.last_login ? ago(u.last_login) : 'Unknown'} · {watchedEntries.length} videos watched · {monitoredCourses.length} courses
                   </div>
@@ -153,9 +237,29 @@ export function AdminDashboard() {
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                   >
+                    {/* User Session & Metadata Box */}
+                    <div className="admin-info-box">
+                      <div className="admin-info-line">
+                        <span className="info-lbl">🕒 Last Active:</span>
+                        <span className="info-val">{formatUserLastActive(u.last_login)}</span>
+                      </div>
+                      {(u.location || u.timezone) ? (
+                        <div className="admin-info-line">
+                          <span className="info-lbl">📍 Location:</span>
+                          <span className="info-val">
+                            {u.location || 'Unknown'} {u.timezone ? `(${u.timezone})` : ''}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="admin-info-line">
+                        <span className="info-lbl">📅 Joined:</span>
+                        <span className="info-val">{formatJoinedDate(u.created_at)}</span>
+                      </div>
+                    </div>
+
                     <div className="divider" />
                     
-                    {/* Courses */}
+                    {/* Tracked Courses Section */}
                     <h4>Tracked Courses ({monitoredCourses.length})</h4>
                     {monitoredCourses.length === 0 ? (
                       <div className="empty-sub">No courses tracked yet.</div>
@@ -186,28 +290,47 @@ export function AdminDashboard() {
 
                     <div className="divider" />
 
-                    {/* Watch History */}
+                    {/* Rich Watch History Cards */}
                     <h4>Watch Activity ({watchedEntries.length})</h4>
                     {watchedEntries.length === 0 ? (
                       <div className="empty-sub">No watch activity recorded yet.</div>
                     ) : (
-                      <div className="admin-watch-list">
-                        {watchedEntries.slice(0, 15).map(([vidId, vProg]) => {
+                      <div className="admin-rich-watch-list">
+                        {watchedEntries.slice(0, 20).map(([vidId, vProg]) => {
                           const pct = vProg.d > 0 ? Math.round((vProg.p / vProg.d) * 100) : (vProg.done ? 100 : 0);
+                          const fallback = videoLookup.get(vidId);
+                          const title = vProg.title || fallback?.title || `Video (${vidId})`;
+                          const channelTitle = vProg.channelTitle || fallback?.channelTitle || '';
+                          const thumb = vProg.thumb || fallback?.thumb || `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg`;
+
                           return (
-                            <div key={vidId} className="admin-watch-row">
-                              <span className="watch-status-ic">{vProg.done ? '✓' : '⏱'}</span>
-                              <div className="watch-info">
-                                <span className="watch-vid-id">Video ID: <code>{vidId}</code></span>
-                                <span className="watch-meta">
-                                  Progress: {pct}% {vProg.d > 0 ? `(${fmtDur(Math.round(vProg.p))} / ${fmtDur(Math.round(vProg.d))})` : ''} · {vProg.t ? ago(new Date(vProg.t).toISOString()) : ''}
-                                </span>
+                            <div key={vidId} className="admin-rich-watch-card">
+                              <img
+                                className="admin-watch-thumb"
+                                src={thumb}
+                                alt=""
+                                onError={e => {
+                                  const t = e.target as HTMLImageElement;
+                                  if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                                }}
+                              />
+                              <div className="admin-watch-main">
+                                <div className="admin-watch-title" title={title}>{title}</div>
+                                {channelTitle ? <div className="admin-watch-chan">{channelTitle}</div> : null}
+                                <div className="admin-watch-meta-row">
+                                  <span className={`admin-prog-badge ${vProg.done ? 'done' : ''}`}>
+                                    {vProg.done ? 'Completed' : (vProg.d > 0 ? `${fmtDur(Math.round(vProg.p))} / ${fmtDur(Math.round(vProg.d))} (${pct}%)` : `${pct}%`)}
+                                  </span>
+                                  <span className="admin-watch-time">
+                                    {formatWatchDateTime(vProg.t)}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           );
                         })}
-                        {watchedEntries.length > 15 && (
-                          <div className="admin-more-text">+ {watchedEntries.length - 15} more videos</div>
+                        {watchedEntries.length > 20 && (
+                          <div className="admin-more-text">+ {watchedEntries.length - 20} more videos</div>
                         )}
                       </div>
                     )}
