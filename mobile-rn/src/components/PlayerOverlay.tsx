@@ -930,8 +930,8 @@ function PlayerWindow({ video }: { video: Video }) {
                   {/* ROW 2: SECONDARY UTILITY ACTIONS */}
                   <View style={styles.utilityRow}>
                     <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
-                      <Ionicons name="expand-outline" size={17} color={colors.inkSoft} />
-                      <Text style={styles.utilityLabel}>Fullscreen</Text>
+                      <Ionicons name="expand-outline" size={15} color={colors.inkSoft} />
+                      <Text style={styles.utilityLabel} numberOfLines={1}>Fullscreen</Text>
                     </Pressable>
 
                     <Pressable
@@ -941,27 +941,27 @@ function PlayerWindow({ video }: { video: Video }) {
                     >
                       <Ionicons
                         name="logo-closed-captioning"
-                        size={17}
+                        size={15}
                         color={captionsOn ? colors.accent : colors.inkSoft}
                       />
-                      <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]}>
+                      <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
                         {captionsOn ? 'CC On' : 'CC Off'}
                       </Text>
                     </Pressable>
 
                     <Pressable style={styles.utilityBtn} onPress={handleShare}>
-                      <Ionicons name="share-social-outline" size={17} color={colors.inkSoft} />
-                      <Text style={styles.utilityLabel}>Share</Text>
+                      <Ionicons name="share-social-outline" size={15} color={colors.inkSoft} />
+                      <Text style={styles.utilityLabel} numberOfLines={1}>Share</Text>
                     </Pressable>
 
-                    <Pressable style={[styles.utilityBtn, done && styles.utilityBtnActive]} onPress={toggleWatched}>
+                    <Pressable style={[styles.utilityBtn, done && styles.utilityBtnDoneActive]} onPress={toggleWatched}>
                       <Ionicons
                         name={done ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                        size={17}
+                        size={15}
                         color={done ? colors.good : colors.inkSoft}
                       />
-                      <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]}>
-                        {done ? 'Watched' : 'Mark Done'}
+                      <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]} numberOfLines={1}>
+                        Done
                       </Text>
                     </Pressable>
                   </View>
@@ -1326,25 +1326,30 @@ const styles = StyleSheet.create({
   utilityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    gap: 6,
     paddingVertical: 2,
   },
   utilityBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    gap: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 2,
     borderRadius: radius.pill,
     backgroundColor: colors.bg3,
   },
   utilityBtnActive: {
+    backgroundColor: 'rgba(235, 120, 39, 0.15)',
+  },
+  utilityBtnDoneActive: {
     backgroundColor: 'rgba(95, 181, 106, 0.15)',
   },
   utilityLabel: {
     color: colors.inkSoft,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
   },
 

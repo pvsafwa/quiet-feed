@@ -731,7 +731,7 @@ export function PlayerModal() {
                   </button>
                   <button className={`ctrl-btn-util ${done ? 'done-active' : ''}`} onClick={toggleWatched} title="Toggle watched">
                     <ICheck style={{ width: 16, height: 16, color: done ? 'var(--good)' : 'var(--ink-soft)' }} />
-                    <span style={{ color: done ? 'var(--good)' : 'inherit' }}>{done ? 'Watched' : 'Mark Done'}</span>
+                    <span style={{ color: done ? 'var(--good)' : 'inherit' }}>Done</span>
                   </button>
                 </div>
               </div>
