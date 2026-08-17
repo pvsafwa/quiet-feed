@@ -232,11 +232,16 @@ class ExpoPipModule : Module() {
             throw Exception("Download failed with HTTP status $status")
           }
 
-          val totalLength = connection.contentLength.toLong()
+          val totalLength = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            connection.contentLengthLong
+          } else {
+            connection.getHeaderField("Content-Length")?.toLongOrNull() ?: connection.contentLength.toLong()
+          }
+
           val inputStream = BufferedInputStream(connection.inputStream)
           val outputStream = FileOutputStream(destinationFile)
 
-          val buffer = ByteArray(16384)
+          val buffer = ByteArray(32768)
           var totalBytesRead = 0L
           var bytesRead: Int
           var lastEmitTime = 0L
@@ -247,21 +252,26 @@ class ExpoPipModule : Module() {
               totalBytesRead += bytesRead
 
               val now = System.currentTimeMillis()
-              if (now - lastEmitTime > 250 || totalBytesRead == totalLength) {
+              if (now - lastEmitTime > 150 || (totalLength > 0 && totalBytesRead == totalLength)) {
                 lastEmitTime = now
                 val progressPct = if (totalLength > 0) ((totalBytesRead * 100) / totalLength).toInt() else 0
-                sendEvent("onDownloadProgress", mapOf(
-                  "progress" to progressPct,
-                  "bytesDownloaded" to totalBytesRead,
-                  "totalBytes" to totalLength
-                ))
+
+                try {
+                  sendEvent("onDownloadProgress", mapOf(
+                    "progress" to progressPct,
+                    "bytesDownloaded" to totalBytesRead.toDouble(),
+                    "totalBytes" to totalLength.toDouble()
+                  ))
+                } catch (e: Exception) {
+                  Log.e("ExpoPipModule", "Failed to send onDownloadProgress event", e)
+                }
               }
             }
             outputStream.flush()
           } finally {
-            outputStream.close()
-            inputStream.close()
-            connection.disconnect()
+            try { outputStream.close() } catch (e: Exception) {}
+            try { inputStream.close() } catch (e: Exception) {}
+            try { connection.disconnect() } catch (e: Exception) {}
           }
 
           promise.resolve(destinationFile.absolutePath)

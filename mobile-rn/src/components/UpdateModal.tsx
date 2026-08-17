@@ -41,19 +41,31 @@ export function UpdateModal() {
   }, [open]);
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('onDownloadProgress', (data: any) => {
+    const onProgress = (data: any) => {
       if (typeof data?.progress === 'number') {
         setProgress(data.progress);
       }
       if (typeof data?.bytesDownloaded === 'number') {
         setDownloadedBytes(data.bytesDownloaded);
       }
-      if (typeof data?.totalBytes === 'number') {
+      if (typeof data?.totalBytes === 'number' && data.totalBytes > 0) {
         setTotalBytes(data.totalBytes);
       }
-    });
+    };
 
-    return () => sub.remove();
+    let sub1: any = null;
+    try {
+      if (typeof (ExpoPip as any)?.addListener === 'function') {
+        sub1 = (ExpoPip as any).addListener('onDownloadProgress', onProgress);
+      }
+    } catch (e) {}
+
+    const sub2 = DeviceEventEmitter.addListener('onDownloadProgress', onProgress);
+
+    return () => {
+      sub1?.remove?.();
+      sub2.remove();
+    };
   }, []);
 
   if (!open || !release) return null;
@@ -133,15 +145,17 @@ export function UpdateModal() {
           {state === 'downloading' && (
             <View style={styles.progressSection}>
               <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                <View style={[styles.progressFill, { width: `${Math.max(progress, 3)}%` }]} />
               </View>
               <View style={styles.progressMeta}>
-                <Text style={styles.progressPercent}>{progress}%</Text>
-                {totalBytes > 0 && (
-                  <Text style={styles.progressBytes}>
-                    {mbText(downloadedBytes)} MB / {mbText(totalBytes)} MB
-                  </Text>
-                )}
+                <Text style={styles.progressPercent}>{progress > 0 ? `${progress}%` : 'Starting…'}</Text>
+                <Text style={styles.progressBytes}>
+                  {downloadedBytes > 0
+                    ? (totalBytes > 0
+                        ? `${mbText(downloadedBytes)} MB / ${mbText(totalBytes)} MB`
+                        : `${mbText(downloadedBytes)} MB`)
+                    : 'Connecting…'}
+                </Text>
               </View>
               <Text style={styles.downloadHint}>Please wait while the update is downloading…</Text>
             </View>

@@ -14,6 +14,8 @@ interface ExpoPipInterface {
   unlockOrientation(): boolean;
   installApk(filePath: string): boolean;
   downloadApk(url: string, fileName: string): Promise<string>;
+  addListener?(eventName: string, listener: (event: any) => void): { remove: () => void };
+  removeListener?(eventName: string, listener: (event: any) => void): void;
 }
 
 const ExpoPip = requireNativeModule<ExpoPipInterface>('ExpoPip');
