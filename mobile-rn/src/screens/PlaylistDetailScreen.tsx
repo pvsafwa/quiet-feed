@@ -7,6 +7,7 @@ import { useStore } from '../store';
 import { isDone, isMon } from '../lib/progress';
 import { VideoCard } from '../components/VideoCard';
 import { colors, radius } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function PlaylistDetailScreen() {
   const route = useRoute<any>();
@@ -53,12 +54,14 @@ export function PlaylistDetailScreen() {
     </View>
   );
 
+  const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
+  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
     <FlatList
       style={{ backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, paddingBottom: cur ? 100 : 32 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}
       data={here}
       keyExtractor={(v) => v.id}
       initialNumToRender={8}

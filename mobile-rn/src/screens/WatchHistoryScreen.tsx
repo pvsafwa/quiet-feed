@@ -3,6 +3,7 @@ import { View, Text, FlatList, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useStore, watchHistory } from '../store';
 import { VideoCard } from '../components/VideoCard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 
 export function WatchHistoryScreen() {
@@ -13,12 +14,14 @@ export function WatchHistoryScreen() {
 
   const list = useMemo(() => watchHistory({ vid, selVideos, prog } as any), [vid, selVideos, prog, progV]);
 
+  const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
+  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
     <FlatList
       style={{ backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, paddingBottom: cur ? 100 : 32 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}
       data={list}
       keyExtractor={(v) => v.id}
       initialNumToRender={8}

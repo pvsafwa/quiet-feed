@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore, userActiveChannels } from '../store';
 import { colors, radius } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Channel } from '../lib/types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -18,6 +19,7 @@ export function ChannelDrawer(props: DrawerContentComponentProps) {
   const filter = useStore(s => s.filter);
   const isAdmin = useStore(s => s.user?.role === 'admin');
   const setFilter = useStore(s => s.setFilter);
+  const insets = useSafeAreaInsets();
 
   // Group active channels by language
   const channelsByLang: Record<string, Channel[]> = {};
@@ -52,7 +54,7 @@ export function ChannelDrawer(props: DrawerContentComponentProps) {
   };
 
   return (
-    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 8, paddingBottom: 48 }}>
+    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 8, paddingBottom: insets.bottom + 48 }}>
       <Text style={styles.title}>Channels</Text>
 
       {/* All Channels option */}

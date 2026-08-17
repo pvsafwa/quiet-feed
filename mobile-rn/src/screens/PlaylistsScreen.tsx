@@ -7,6 +7,7 @@ import { useStore, plList, userActiveChannels, type Store } from '../store';
 import { isDone } from '../lib/progress';
 import { fmtTotal } from '../lib/format';
 import { colors, radius } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function PlaylistsScreen() {
   const navigation = useNavigation<any>();
@@ -24,6 +25,8 @@ export function PlaylistsScreen() {
   useStore(s => s.progV);
   const runPlaylists = useStore(s => s.runPlaylists);
   const compute = useStore(s => s.computePlaylistDurations);
+  const insets = useSafeAreaInsets();
+  const bottomPad = 56 + insets.bottom + (cur ? 60 + 20 : 20);
 
   const selectedChannel = useMemo(() => {
     return channels.find(c => c.id === filter);
@@ -47,7 +50,7 @@ export function PlaylistsScreen() {
   // When no channel is selected, prompt user to select a channel
   if (filter === 'all') {
     return (
-      <ScrollView style={styles.pickerContainer} contentContainerStyle={[styles.pickerContent, { paddingBottom: cur ? 140 : 40 }]}>
+      <ScrollView style={styles.pickerContainer} contentContainerStyle={[styles.pickerContent, { paddingBottom: bottomPad }]}>
         <View style={styles.promptHeader}>
           <View style={styles.promptIconCircle}>
             <Ionicons name="folder-open-outline" size={32} color={colors.accent} />
@@ -105,7 +108,7 @@ export function PlaylistsScreen() {
 
       <FlatList
         style={{ backgroundColor: colors.bg }}
-        contentContainerStyle={{ padding: 16, paddingBottom: cur ? 140 : 32 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}
         data={list}
         keyExtractor={(p) => p.id}
         initialNumToRender={8}

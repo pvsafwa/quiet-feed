@@ -16,6 +16,7 @@ import { WatchHistoryScreen } from '../screens/WatchHistoryScreen';
 import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
 import { ChannelDrawer } from '../components/ChannelDrawer';
 import { useStore } from '../store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -41,6 +42,7 @@ function SettingsButton() {
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = { Videos: 'play', Playlists: 'list', Progress: 'stats-chart' };
 
 function Tabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -52,8 +54,8 @@ function Tabs() {
         tabBarStyle: {
           backgroundColor: colors.bg2,
           borderTopColor: colors.line,
-          height: 56,
-          paddingBottom: 6,
+          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom + 6,
           paddingTop: 6,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },

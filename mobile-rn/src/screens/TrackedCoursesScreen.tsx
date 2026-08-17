@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { isDone } from '../lib/progress';
 import { fmtTotal } from '../lib/format';
 import { colors } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function TrackedCoursesScreen() {
   const navigation = useNavigation<any>();
@@ -19,12 +20,14 @@ export function TrackedCoursesScreen() {
     return { id, title: meta.title, channel: meta.channelTitle || pl.channel || '', channelId: meta.channelId || pl.channelId || '', total: pl.total || 0, done, tot, pct: tot ? Math.round((done / tot) * 100) : 0 };
   });
 
+  const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
+  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
     <FlatList
       style={styles.container}
-      contentContainerStyle={[styles.content, { paddingBottom: cur ? 100 : 32 }]}
+      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       data={mon}
       keyExtractor={(m) => m.id}
       initialNumToRender={8}

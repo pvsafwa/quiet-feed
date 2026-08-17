@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useStore } from '../store';
 import { colors, radius } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ago, fmtDur, fmtTotal } from '../lib/format';
 import type { AdminUserData } from '../lib/types';
 
@@ -102,12 +103,14 @@ export function AdminDashboardScreen() {
     );
   }
 
+  const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
+  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={[styles.content, { paddingBottom: cur ? 100 : 36 }]}
+      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
     >
       {/* Overview Metric Cards */}

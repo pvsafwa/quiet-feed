@@ -6,9 +6,11 @@ import { useStore } from '../store';
 import { totals, streaks, lastDays } from '../lib/progress';
 import { fmtSpan } from '../lib/format';
 import { colors, radius } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function ProgressScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const prog = useStore(s => s.prog);
   useStore(s => s.progV);
 
@@ -25,9 +27,10 @@ export function ProgressScreen() {
   ];
 
   const cur = useStore(s => s.cur);
+  const bottomPad = 56 + insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: cur ? 140 : 32 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>
       <View style={styles.statGrid}>
         {cards.map((c, i) => (
           <View key={i} style={styles.stat}>

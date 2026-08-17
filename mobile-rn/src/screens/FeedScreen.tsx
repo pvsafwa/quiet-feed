@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useStore, feedItems, hasMoreVideos, type Store } from '../store';
 import { VideoCard } from '../components/VideoCard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius } from '../theme';
 
 export function FeedScreen() {
@@ -41,12 +42,14 @@ export function FeedScreen() {
     </View>
   );
 
+  const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
+  const bottomPad = 56 + insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
     <FlatList
       style={{ backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, paddingBottom: cur ? 140 : 32 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}
       data={list}
       keyExtractor={(v) => v.id}
       initialNumToRender={8}

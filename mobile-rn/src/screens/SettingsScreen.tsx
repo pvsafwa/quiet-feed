@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useStore } from '../store';
 import { colors, radius } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CURRENT_APP_VERSION, CURRENT_VERSION_CODE } from '../lib/updater';
 import type { ChannelLanguage } from '../lib/types';
 
@@ -59,10 +60,12 @@ export function SettingsScreen() {
     return selectedChannelIds.includes(id);
   };
 
+  const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
+  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18, paddingBottom: cur ? 100 : 40 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18, paddingBottom: bottomPad }}>
       <Text style={styles.h2}>Account</Text>
       <View style={styles.acct}>
         {user?.picture ? <Image source={{ uri: user.picture }} style={styles.av} /> : <View style={[styles.av, { backgroundColor: colors.bg3 }]} />}
