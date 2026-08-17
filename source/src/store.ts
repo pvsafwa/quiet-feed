@@ -104,7 +104,7 @@ export const useStore = create<Store>((set, get) => ({
   selectedChannelIds: _userChans,
   filter: 'all',
   search: '',
-  sidebarOpen: typeof window !== 'undefined' ? window.innerWidth >= 980 : true,
+  sidebarOpen: typeof window !== 'undefined' ? window.innerWidth > 768 : true,
   hideShorts: !!_prefs.hideShorts,
   autoRefreshMins: +_prefs.autoRefreshMins || 0,
   lastSeen: Number(localStorage.getItem(LS.visit)) || 0,

@@ -173,7 +173,7 @@ export function Sidebar() {
     if (s.sel) s.closePlaylist();
     if (s.tab === 'stats' || s.tab === 'admin') s.switchTab('videos');
     setFilter(id);
-    if (typeof window !== 'undefined' && window.innerWidth < 980) toggleSidebar(false);
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) toggleSidebar(false);
   };
 
   return (

@@ -323,8 +323,8 @@
 .sb-add{width:100%;justify-content:center}
 
 /* Dock the drawer beside the content on wide screens; overlay on phones/tablets. */
-@media(min-width:980px){
-  .app.has-nav.nav-open .wrap{margin-left:300px}
+@media(min-width:769px){
+  .app.has-nav.nav-open .wrap{margin-left:280px}
   .app.nav-open .scrim{display:none}
 }
 
