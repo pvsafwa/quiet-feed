@@ -444,6 +444,12 @@ export function PlayerModal() {
   // goes through our own overlay controls.
   // ──────────────────────────────────────────────────────────────
 
+  const tab = useStore(s => s.tab);
+  const sel = useStore(s => s.sel);
+  const panelOpen = useStore(s => s.panelOpen);
+  const sidebarOpen = useStore(s => s.sidebarOpen);
+  const isTabScreen = (tab === 'videos' || tab === 'playlists' || tab === 'stats') && !sel && !panelOpen;
+
   return createPortal(
     <AnimatePresence>
       {cur && !pip && (
@@ -454,7 +460,7 @@ export function PlayerModal() {
       {cur && (
         <motion.div
           key="qf-win"
-          className={`qf-window ${pip ? 'pip' : 'modal'}`}
+          className={`qf-window ${pip ? 'pip' : 'modal'} ${isTabScreen ? 'is-tab-screen' : 'is-stack-screen'} ${sidebarOpen ? 'sidebar-is-open' : ''}`}
           initial={{ opacity: 0, scale: 0.98, y: 18 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.98, y: 18 }}
