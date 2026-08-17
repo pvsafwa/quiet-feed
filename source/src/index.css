@@ -690,11 +690,14 @@ h2 .role{margin-left:8px}
 }
 
 .player-seek-touch {
-  height: 24px;
+  height: 28px;
   display: flex;
   align-items: center;
   cursor: pointer;
   position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .player-seek-track {
@@ -712,13 +715,24 @@ h2 .role{margin-left:8px}
 
 .player-seek-knob {
   position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
   background: var(--accent);
-  top: 6px;
-  margin-left: -4px;
+  top: 7px;
+  margin-left: -5px;
   pointer-events: none;
+  transition: transform 0.1s ease, width 0.1s ease, height 0.1s ease;
+}
+
+.player-seek-touch:hover .player-seek-knob,
+.player-seek-knob.scrubbing {
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  top: 5px;
+  margin-left: -7px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .player-time-row {

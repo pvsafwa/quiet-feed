@@ -10,6 +10,7 @@ import {
   TouchableWithoutFeedback,
   Share,
   BackHandler,
+  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -79,6 +80,107 @@ function PlayerWindow({ video }: { video: Video }) {
   const [ended, setEnded] = useState(false);
   const [currentTime, setCurrentTime] = useState(startAt);
   const [totalDuration, setTotalDuration] = useState(initialDuration);
+
+  // Interactive tap + hold + swipe scrubbing state
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState(0);
+  const isScrubbingRef = useRef(false);
+  const totalDurationRef = useRef(totalDuration);
+  totalDurationRef.current = totalDuration;
+
+  // Portrait seek bar layout width tracking
+  const [portraitBarWidth, setPortraitBarWidth] = useState(width - 36);
+  const portraitBarWidthRef = useRef(width - 36);
+  portraitBarWidthRef.current = portraitBarWidth;
+
+  // Landscape seek bar layout width tracking
+  const [landscapeBarWidth, setLandscapeBarWidth] = useState(width - 160);
+  const landscapeBarWidthRef = useRef(width - 160);
+  landscapeBarWidthRef.current = landscapeBarWidth;
+
+  // Portrait seek PanResponder for tap + hold + swipe
+  const portraitSeekPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderGrant: (evt) => {
+        resetHideTimer();
+        isScrubbingRef.current = true;
+        setIsScrubbing(true);
+        const touchX = evt.nativeEvent.locationX;
+        const barW = portraitBarWidthRef.current || 1;
+        const ratio = Math.max(0, Math.min(1, touchX / barW));
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderMove: (evt) => {
+        resetHideTimer();
+        const touchX = evt.nativeEvent.locationX;
+        const barW = portraitBarWidthRef.current || 1;
+        const ratio = Math.max(0, Math.min(1, touchX / barW));
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderRelease: (evt) => {
+        const touchX = evt.nativeEvent.locationX;
+        const barW = portraitBarWidthRef.current || 1;
+        const ratio = Math.max(0, Math.min(1, touchX / barW));
+        const target = ratio * totalDurationRef.current;
+        playerRef.current?.seekTo(target, true);
+        setCurrentTime(target);
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+      onPanResponderTerminate: () => {
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+    })
+  ).current;
+
+  // Landscape seek PanResponder for tap + hold + swipe
+  const landscapeSeekPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderGrant: (evt) => {
+        resetHideTimer();
+        isScrubbingRef.current = true;
+        setIsScrubbing(true);
+        const touchX = evt.nativeEvent.locationX;
+        const barW = landscapeBarWidthRef.current || 1;
+        const ratio = Math.max(0, Math.min(1, touchX / barW));
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderMove: (evt) => {
+        resetHideTimer();
+        const touchX = evt.nativeEvent.locationX;
+        const barW = landscapeBarWidthRef.current || 1;
+        const ratio = Math.max(0, Math.min(1, touchX / barW));
+        const target = ratio * totalDurationRef.current;
+        setScrubTime(target);
+      },
+      onPanResponderRelease: (evt) => {
+        const touchX = evt.nativeEvent.locationX;
+        const barW = landscapeBarWidthRef.current || 1;
+        const ratio = Math.max(0, Math.min(1, touchX / barW));
+        const target = ratio * totalDurationRef.current;
+        playerRef.current?.seekTo(target, true);
+        setCurrentTime(target);
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+      onPanResponderTerminate: () => {
+        isScrubbingRef.current = false;
+        setIsScrubbing(false);
+      },
+    })
+  ).current;
 
   // Auto-play next video state
   const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
@@ -181,7 +283,9 @@ function PlayerWindow({ video }: { video: Video }) {
         const prog = useStore.getState().prog;
         const duration = d || video.seconds || totalDuration || 0;
 
-        setCurrentTime(t);
+        if (!isScrubbingRef.current) {
+          setCurrentTime(t);
+        }
         if (duration > 0 && duration !== totalDuration) {
           setTotalDuration(duration);
         }
@@ -447,7 +551,8 @@ function PlayerWindow({ video }: { video: Video }) {
   const parentHeight = isLandscape ? height : Math.round((width * 9) / 16);
   const scale = isLandscape ? Math.max(width / TARGET_WIDTH, height / TARGET_HEIGHT) : width / TARGET_WIDTH;
 
-  const progPct = totalDuration > 0 ? Math.min(100, (currentTime / totalDuration) * 100) : 0;
+  const displayTime = isScrubbing ? scrubTime : currentTime;
+  const progPct = totalDuration > 0 ? Math.min(100, (displayTime / totalDuration) * 100) : 0;
   const prog = useStore(s => s.prog);
   const done = isDone(prog, video.id);
 
@@ -609,20 +714,19 @@ function PlayerWindow({ video }: { video: Video }) {
 
                       {/* Bottom Bar in Landscape */}
                       <View style={[styles.landscapeBottomBar, { paddingBottom: Math.max(insets.bottom, 12), paddingHorizontal: Math.max(insets.left, 18) }]}>
-                        <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(currentTime)) || '0:00'}</Text>
-                        <Pressable
+                        <Text style={[styles.landscapeTimeText, isScrubbing && { color: colors.accent }]}>
+                          {fmtDur(Math.floor(displayTime)) || '0:00'}
+                        </Text>
+                        <View
                           style={styles.landscapeProgressTouch}
-                          onPress={(e) => {
-                            const clickX = e.nativeEvent.locationX;
-                            const barWidth = width - 160;
-                            handleSeekToRatio(clickX / barWidth);
-                          }}
+                          onLayout={(e) => setLandscapeBarWidth(e.nativeEvent.layout.width)}
+                          {...landscapeSeekPanResponder.panHandlers}
                         >
                           <View style={styles.landscapeProgressTrack}>
                             <View style={[styles.progressFill, { width: `${progPct}%` }]} />
                           </View>
-                          <View style={[styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]} />
-                        </Pressable>
+                          <View style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]} />
+                        </View>
                         <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
                         <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
                           <Ionicons name="contract" size={22} color="#fff" />
@@ -652,24 +756,23 @@ function PlayerWindow({ video }: { video: Video }) {
             {/* PORTRAIT CONTROLS & INFO */}
             {!isLandscape && (
               <>
-                {/* PROGRESS BAR & SEEK CONTROLLER */}
+                {/* PROGRESS BAR & SEEK CONTROLLER (TAP + HOLD + SWIPE) */}
                 <View style={styles.progressContainer}>
-                  <Pressable
+                  <View
                     style={styles.progressBarTouch}
-                    onPress={(e) => {
-                      const clickX = e.nativeEvent.locationX;
-                      const barWidth = width - 36; // 18 padding on each side
-                      handleSeekToRatio(clickX / barWidth);
-                    }}
+                    onLayout={(e) => setPortraitBarWidth(e.nativeEvent.layout.width)}
+                    {...portraitSeekPanResponder.panHandlers}
                   >
                     <View style={styles.progressTrack}>
                       <View style={[styles.progressFill, { width: `${progPct}%` }]} />
                     </View>
-                    <View style={[styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]} />
-                  </Pressable>
+                    <View style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]} />
+                  </View>
                   
                   <View style={styles.timeRow}>
-                    <Text style={styles.timeText}>{fmtDur(Math.floor(currentTime)) || '0:00'}</Text>
+                    <Text style={[styles.timeText, isScrubbing && { color: colors.accent, fontWeight: '700' }]}>
+                      {fmtDur(Math.floor(displayTime)) || '0:00'}
+                    </Text>
                     <Text style={styles.timeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
                   </View>
                 </View>
@@ -1024,12 +1127,26 @@ const styles = StyleSheet.create({
   },
   progressKnob: {
     position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: colors.accent,
-    top: 6,
-    marginLeft: -4,
+    top: 5,
+    marginLeft: -5,
+  },
+  progressKnobScrubbing: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    top: 2,
+    marginLeft: -8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 5,
   },
   timeRow: {
     flexDirection: 'row',

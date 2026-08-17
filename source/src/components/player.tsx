@@ -100,13 +100,48 @@ export function PlayerModal() {
     } catch {}
   };
 
-  const handleSeekRatio = (e: React.MouseEvent<HTMLDivElement>) => {
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState(0);
+  const isScrubbingRef = useRef(false);
+
+  const handleSeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (totalDuration <= 0) return;
+    const el = e.currentTarget;
+    try { el.setPointerCapture(e.pointerId); } catch {}
+    isScrubbingRef.current = true;
+    setIsScrubbing(true);
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = ratio * totalDuration;
+    setScrubTime(target);
+  };
+
+  const handleSeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current || totalDuration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const target = ratio * totalDuration;
-    playerRef.current?.seekTo?.(target, true);
+    setScrubTime(target);
+  };
+
+  const handleSeekPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current || totalDuration <= 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = ratio * totalDuration;
+    try {
+      playerRef.current?.seekTo?.(target, true);
+    } catch {}
     setCurrentTime(target);
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+  };
+
+  const handleSeekPointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
   };
 
   const handleShare = async () => {
@@ -159,7 +194,9 @@ export function PlayerModal() {
       const progStore = useStore.getState().prog;
       const duration = dur || v.seconds || totalDuration || 0;
 
-      setCurrentTime(t);
+      if (!isScrubbingRef.current) {
+        setCurrentTime(t);
+      }
       if (duration > 0 && duration !== totalDuration) setTotalDuration(duration);
 
       addWatch(progStore, v, 1, duration);
@@ -412,7 +449,8 @@ export function PlayerModal() {
     setEnded(false);
   };
 
-  const progPct = totalDuration > 0 ? Math.min(100, (currentTime / totalDuration) * 100) : 0;
+  const displayTime = isScrubbing ? scrubTime : currentTime;
+  const progPct = totalDuration > 0 ? Math.min(100, (displayTime / totalDuration) * 100) : 0;
   const done = isDone(prog, cur?.id || '');
 
   // ──────────────────────────────────────────────────────────────
@@ -580,14 +618,22 @@ export function PlayerModal() {
               </div>
 
               <div className="player-progress-wrap">
-                <div className="player-seek-touch" onClick={handleSeekRatio}>
+                <div
+                  className={`player-seek-touch ${isScrubbing ? 'is-scrubbing' : ''}`}
+                  onPointerDown={handleSeekPointerDown}
+                  onPointerMove={handleSeekPointerMove}
+                  onPointerUp={handleSeekPointerUp}
+                  onPointerCancel={handleSeekPointerCancel}
+                >
                   <div className="player-seek-track">
                     <div className="player-seek-fill" style={{ width: `${progPct}%` }} />
                   </div>
-                  <div className="player-seek-knob" style={{ left: `${Math.max(0, Math.min(98, progPct))}%` }} />
+                  <div className={`player-seek-knob ${isScrubbing ? 'scrubbing' : ''}`} style={{ left: `${Math.max(0, Math.min(98, progPct))}%` }} />
                 </div>
                 <div className="player-time-row">
-                  <span>{fmtDur(Math.floor(currentTime)) || '0:00'}</span>
+                  <span style={isScrubbing ? { color: 'var(--accent)', fontWeight: 700 } : undefined}>
+                    {fmtDur(Math.floor(displayTime)) || '0:00'}
+                  </span>
                   <span>{fmtDur(Math.floor(totalDuration)) || '--:--'}</span>
                 </div>
               </div>
