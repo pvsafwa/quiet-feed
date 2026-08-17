@@ -280,6 +280,21 @@ function PlayerWindow({ video }: { video: Video }) {
     ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
   }, [video.id, video.title, video.channelTitle, video.seconds]);
 
+  // Re-sync position and duration when video changes or server progress arrives
+  const progStore = useStore(s => s.prog);
+  const progVersion = useStore(s => s.progV);
+  useEffect(() => {
+    const pr = progStore.v[video.id];
+    const initialPos = pr && !pr.done && pr.p > 0 ? Math.floor(pr.p) : 0;
+    const initialDur = video.seconds || (pr && pr.d) || 0;
+    if (initialDur > 0 && (!totalDuration || totalDuration === 0)) {
+      setTotalDuration(initialDur);
+    }
+    if (initialPos > 0 && currentTime === 0 && !playing && !isScrubbingRef.current) {
+      setCurrentTime(initialPos);
+    }
+  }, [video.id, progVersion, playing]);
+
   useEffect(() => {
     const subPlayPause = DeviceEventEmitter.addListener('onPipPlayPause', () => {
       if (ended) {
@@ -445,6 +460,16 @@ function PlayerWindow({ video }: { video: Video }) {
       setAutoPlayCountdown(null);
       ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
       ExpoPip.setPlaybackState(true);
+
+      // If resuming from a saved position that hadn't applied on initial mount
+      const pr = useStore.getState().prog.v[video.id];
+      if (pr && pr.p > 2 && (!pr.done || pr.p < (pr.d || 9999) * 0.95)) {
+        playerRef.current?.getCurrentTime().then((t: number) => {
+          if (t < 2 && pr.p > 5) {
+            playerRef.current?.seekTo(Math.floor(pr.p), true);
+          }
+        }).catch(() => {});
+      }
       return;
     }
     if (state === 'buffering' || state === 'unstarted') {
@@ -601,11 +626,13 @@ function PlayerWindow({ video }: { video: Video }) {
   const scale = isLandscape
     ? (videoFitMode === 'fill' ? Math.max(width / TARGET_WIDTH, height / TARGET_HEIGHT) : Math.min(width / TARGET_WIDTH, height / TARGET_HEIGHT))
     : width / TARGET_WIDTH;
-
-  const displayTime = isScrubbing ? scrubTime : currentTime;
-  const progPct = totalDuration > 0 ? Math.min(100, (displayTime / totalDuration) * 100) : 0;
   const prog = useStore(s => s.prog);
   const done = isDone(prog, video.id);
+  const vProg = prog.v[video.id];
+  const effectiveDuration = totalDuration || (vProg && vProg.d) || video.seconds || 0;
+  const effectiveTime = isScrubbing ? scrubTime : (currentTime > 0 ? currentTime : (vProg && !vProg.done ? vProg.p : 0));
+  const progPct = effectiveDuration > 0 ? Math.min(100, (effectiveTime / effectiveDuration) * 100) : (done ? 100 : 0);
+  const displayTime = isScrubbing ? scrubTime : (currentTime > 0 ? currentTime : (vProg ? vProg.p : 0));
 
   return (
     <View style={styles.rootWrapper} pointerEvents={drawerOpen ? 'none' : 'box-none'}>
@@ -805,7 +832,7 @@ function PlayerWindow({ video }: { video: Video }) {
                             pointerEvents="none"
                           />
                         </View>
-                        <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
+                        <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</Text>
                         <Pressable
                           hitSlop={12}
                           onPress={toggleCaptions}
@@ -872,7 +899,7 @@ function PlayerWindow({ video }: { video: Video }) {
                     <Text style={[styles.timeText, isScrubbing && { color: colors.accent, fontWeight: '700' }]}>
                       {fmtDur(Math.floor(displayTime)) || '0:00'}
                     </Text>
-                    <Text style={styles.timeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
+                    <Text style={styles.timeText}>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</Text>
                   </View>
                 </View>
 

@@ -50,7 +50,7 @@ export function registerPlaylist(
 ): number {
   const ids = vids.map(v => v.id);
   let tot = 0;
-  vids.forEach(v => { ensureV(prog, v.id, v.seconds); tot += v.seconds || 0; });
+  vids.forEach(v => { ensureV(prog, v, v.seconds); tot += v.seconds || 0; });
   const prev = prog.pl[p.id] || ({} as any);
   prog.pl[p.id] = { ids, total: tot, title: p.title, channel: p.channelTitle, channelId: p.channelId || prev.channelId };
   return tot;
