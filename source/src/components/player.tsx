@@ -80,6 +80,24 @@ export function PlayerModal() {
     useStore.getState().toast(`Quality: ${opt?.label || qId}`);
   };
 
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const toggleCaptions = () => {
+    setCaptionsOn(prev => {
+      const next = !prev;
+      try {
+        if (next) {
+          playerRef.current?.loadModule?.('captions');
+          playerRef.current?.setOption?.('captions', 'reload', true);
+        } else {
+          playerRef.current?.unloadModule?.('captions');
+          playerRef.current?.setOption?.('captions', 'track', {});
+        }
+      } catch {}
+      useStore.getState().toast(next ? 'Captions enabled' : 'Captions disabled');
+      return next;
+    });
+  };
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       const container = frameRef.current?.closest('.qf-window') || frameRef.current;
@@ -691,6 +709,19 @@ export function PlayerModal() {
                   <button className="ctrl-btn-util" onClick={toggleFullscreen} title="Fullscreen">
                     <IExpand style={{ width: 16, height: 16 }} />
                     <span>Fullscreen</span>
+                  </button>
+                  <button
+                    className={`ctrl-btn-util ${captionsOn ? 'done-active' : ''}`}
+                    onClick={toggleCaptions}
+                    title={captionsOn ? 'Disable captions' : 'Enable captions'}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 16, height: 16, color: captionsOn ? 'var(--accent)' : 'inherit' }}>
+                      <rect x="2" y="4" width="20" height="16" rx="4" />
+                      <path d="M7 15h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7v6zM15 15h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-2v6z" />
+                    </svg>
+                    <span style={{ color: captionsOn ? 'var(--accent)' : 'inherit', fontWeight: captionsOn ? 700 : 'inherit' }}>
+                      {captionsOn ? 'CC On' : 'CC Off'}
+                    </span>
                   </button>
                   <button className="ctrl-btn-util" onClick={handleShare} title="Share video">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 16, height: 16 }}>

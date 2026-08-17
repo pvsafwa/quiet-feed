@@ -209,6 +209,40 @@ function PlayerWindow({ video }: { video: Video }) {
     setVideoFitMode(prev => (prev === 'fit' ? 'fill' : 'fit'));
   };
 
+  // Closed Captions (CC) state & toggle
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const toggleCaptions = () => {
+    setCaptionsOn(prev => {
+      const next = !prev;
+      const code = `
+        (function() {
+          try {
+            var s = document.getElementById('qf-cc-style');
+            if (!s) {
+              s = document.createElement('style');
+              s.id = 'qf-cc-style';
+              document.head.appendChild(s);
+            }
+            if (${!next}) {
+              s.innerHTML = '.ytp-caption-window-container, .caption-window, .ytp-caption-segment, .ytp-caption-window-bottom { display: none !important; opacity: 0 !important; visibility: hidden !important; }';
+              if (window.player && typeof window.player.unloadModule === 'function') window.player.unloadModule('captions');
+              if (window.player && typeof window.player.setOption === 'function') window.player.setOption('captions', 'track', {});
+            } else {
+              s.innerHTML = '';
+              if (window.player && typeof window.player.loadModule === 'function') window.player.loadModule('captions');
+              if (window.player && typeof window.player.setOption === 'function') window.player.setOption('captions', 'reload', true);
+            }
+          } catch(e) {}
+        })();
+        true;
+      `;
+      try {
+        (playerRef.current as any)?.injectJavaScript?.(code);
+      } catch {}
+      return next;
+    });
+  };
+
   // Handle Android hardware back press when in landscape mode
   useEffect(() => {
     const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -618,7 +652,7 @@ function PlayerWindow({ video }: { video: Video }) {
                   play={wantPlay}
                   videoId={video.id}
                   onChangeState={onChangeState}
-                  initialPlayerParams={{ rel: false, modestbranding: true, iv_load_policy: 3, start: startAt, controls: 0, fs: 0, cc_load_policy: 0 }}
+                  initialPlayerParams={{ rel: false, modestbranding: true, iv_load_policy: 3, start: startAt, controls: 0, fs: 0, showClosedCaptions: false, cc_lang_pref: 'none' }}
                   webViewProps={{
                     allowsInlineMediaPlayback: true,
                     mediaPlaybackRequiresUserAction: false,
@@ -630,6 +664,14 @@ function PlayerWindow({ video }: { video: Video }) {
                           Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
                           window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
                           document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                          
+                          var s = document.getElementById('qf-cc-style');
+                          if (!s) {
+                            s = document.createElement('style');
+                            s.id = 'qf-cc-style';
+                            document.head.appendChild(s);
+                          }
+                          s.innerHTML = '.ytp-caption-window-container, .caption-window, .ytp-caption-segment, .ytp-caption-window-bottom { display: none !important; opacity: 0 !important; visibility: hidden !important; }';
                           
                           var disableCC = function() {
                             try {
@@ -766,6 +808,14 @@ function PlayerWindow({ video }: { video: Video }) {
                         <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(totalDuration)) || '--:--'}</Text>
                         <Pressable
                           hitSlop={12}
+                          onPress={toggleCaptions}
+                          style={[styles.hudIconBtn, captionsOn && { backgroundColor: 'rgba(235, 120, 39, 0.3)', borderRadius: 6 }]}
+                          accessibilityLabel={captionsOn ? 'Disable captions' : 'Enable captions'}
+                        >
+                          <Ionicons name="logo-closed-captioning" size={20} color={captionsOn ? colors.accent : '#fff'} />
+                        </Pressable>
+                        <Pressable
+                          hitSlop={12}
                           onPress={toggleVideoFitMode}
                           style={styles.hudIconBtn}
                           accessibilityLabel={videoFitMode === 'fit' ? 'Zoom to Fill' : 'Fit to Screen (Original 16:9)'}
@@ -882,6 +932,21 @@ function PlayerWindow({ video }: { video: Video }) {
                     <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
                       <Ionicons name="expand-outline" size={17} color={colors.inkSoft} />
                       <Text style={styles.utilityLabel}>Fullscreen</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[styles.utilityBtn, captionsOn && styles.utilityBtnActive]}
+                      onPress={toggleCaptions}
+                      accessibilityLabel={captionsOn ? 'Disable captions' : 'Enable captions'}
+                    >
+                      <Ionicons
+                        name="logo-closed-captioning"
+                        size={17}
+                        color={captionsOn ? colors.accent : colors.inkSoft}
+                      />
+                      <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]}>
+                        {captionsOn ? 'CC On' : 'CC Off'}
+                      </Text>
                     </Pressable>
 
                     <Pressable style={styles.utilityBtn} onPress={handleShare}>
