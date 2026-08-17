@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
   StyleSheet,
   useWindowDimensions,
@@ -45,21 +46,27 @@ function PlayerWindow({ video }: { video: Video }) {
   const isLandscape = width > height;
   const drawerOpen = useStore(s => s.drawerOpen);
   const isTabScreen = useStore(s => s.isTabScreen);
+  const playerStartMinimized = useStore(s => s.playerStartMinimized);
+
+  // Initial resume point and duration from progress store
+  const pr = useStore.getState().prog.v[video.id];
+  const startAt = pr && !pr.done && pr.p > 0 && (!pr.d || pr.p < pr.d * 0.95) ? Math.floor(pr.p) : 0;
+  const initialDuration = video.seconds || (pr && pr.d) || 0;
 
   // Y-translation to dock the mini player above the bottom tab bar (or screen bottom on stack screens).
   const tabHeight = isTabScreen ? TAB_BAR_HEIGHT : 0;
   const MAX_Y = height - insets.bottom - tabHeight - MINI_PLAYER_HEIGHT;
   const MIN_Y = 0;
 
-  const translateY = useSharedValue(0); // Starts expanded
-  const isMinimized = useSharedValue(false);
+  const translateY = useSharedValue(playerStartMinimized ? MAX_Y : 0);
+  const isMinimized = useSharedValue(playerStartMinimized);
 
   // Adapt docking position dynamically when navigating between tab screens and stack screens
   useEffect(() => {
-    if (isMinimized.value) {
+    if (isMinimized.value || playerStartMinimized) {
       translateY.value = withSpring(MAX_Y, { damping: 20, stiffness: 200, mass: 0.8 });
     }
-  }, [MAX_Y]);
+  }, [MAX_Y, playerStartMinimized]);
 
   const playerRef = useRef<any>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -67,11 +74,11 @@ function PlayerWindow({ video }: { video: Video }) {
   const autoPlayTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const tcRef = useRef(0);
 
-  const [wantPlay, setWantPlay] = useState(true);
+  const [wantPlay, setWantPlay] = useState(!playerStartMinimized);
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [totalDuration, setTotalDuration] = useState(video.seconds || 0);
+  const [currentTime, setCurrentTime] = useState(startAt);
+  const [totalDuration, setTotalDuration] = useState(initialDuration);
 
   // Auto-play next video state
   const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
@@ -86,10 +93,6 @@ function PlayerWindow({ video }: { video: Video }) {
 
   // Landscape controls visibility
   const [showLandscapeControls, setShowLandscapeControls] = useState(true);
-
-  // Resume point
-  const pr = useStore.getState().prog.v[video.id];
-  const startAt = pr && !pr.done && pr.p > 10 && (!pr.d || pr.p < pr.d * 0.95) ? Math.floor(pr.p) : 0;
 
   // Handle Android hardware back press when in landscape mode
   useEffect(() => {
@@ -754,6 +757,9 @@ function PlayerWindow({ video }: { video: Video }) {
             </View>
             <TouchableWithoutFeedback onPress={expand}>
               <View style={styles.miniInner}>
+                {video.thumb ? (
+                  <Image source={{ uri: video.thumb }} style={styles.miniThumb} />
+                ) : null}
                 <View style={styles.miniTextCont}>
                   <Text style={styles.miniTitle} numberOfLines={1}>{video.title}</Text>
                   <Text style={styles.miniSub} numberOfLines={1}>{video.channelTitle}</Text>
@@ -763,14 +769,11 @@ function PlayerWindow({ video }: { video: Video }) {
                     <Ionicons name="play-skip-forward" size={20} color={colors.accent} />
                   </Pressable>
                 )}
-                <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.miniBtn}>
+                <Pressable hitSlop={12} onPress={expand} style={styles.miniBtn}>
                   <Ionicons name="expand" size={20} color={colors.inkSoft} />
                 </Pressable>
                 <Pressable hitSlop={12} onPress={() => setWantPlay(!playing)} style={styles.miniBtn}>
                   <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.ink} />
-                </Pressable>
-                <Pressable hitSlop={12} onPress={closePlayer} style={styles.miniBtn}>
-                  <Ionicons name="close" size={22} color={colors.ink} />
                 </Pressable>
               </View>
             </TouchableWithoutFeedback>
@@ -1098,6 +1101,7 @@ const styles = StyleSheet.create({
   miniProgBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, backgroundColor: 'rgba(255,255,255,0.1)' },
   miniProgFill: { height: '100%', backgroundColor: colors.accent },
   miniInner: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
+  miniThumb: { width: 44, height: 32, borderRadius: 4, backgroundColor: colors.bg3, marginRight: 10 },
   miniTextCont: { flex: 1, marginRight: 8 },
   miniTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '600' },
   miniSub: { color: colors.inkSoft, fontSize: 12, marginTop: 1 },

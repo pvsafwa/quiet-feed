@@ -11,6 +11,7 @@ const TOKEN_KEY = 'qf_token';
 const PREFS_KEY = 'qf_prefs';
 const VISIT_KEY = 'qf_lastvisit';
 const USER_CHANNELS_KEY = 'qf_user_selected_channels';
+const LAST_PLAYED_KEY = 'qf_last_played_video';
 
 export const SHORT_MAX = 60;
 
@@ -23,6 +24,10 @@ function debouncedSaveProg(prog: Prog) {
 }
 function savePrefs(s: { hideShorts: boolean; autoRefreshMins: number }) {
   AsyncStorage.setItem(PREFS_KEY, JSON.stringify({ hideShorts: s.hideShorts, autoRefreshMins: s.autoRefreshMins })).catch(() => {});
+}
+function saveLastPlayed(v: Video | null, queue: Video[] = [], idx = 0) {
+  if (!v) return;
+  AsyncStorage.setItem(LAST_PLAYED_KEY, JSON.stringify({ video: v, queue, idx })).catch(() => {});
 }
 
 interface VidState { buffers: Record<string, Video[]>; cursors: Record<string, Cursor>; loaded: boolean }
@@ -50,6 +55,7 @@ export interface Store {
   banner: string | null;
   toastMsg: { msg: string; err: boolean; id: number } | null;
   cur: Video | null;
+  playerStartMinimized: boolean;
   playerQueue: Video[];      // The list context when player was opened
   playerQueueIdx: number;    // Index of cur in playerQueue
   drawerOpen: boolean;
@@ -123,6 +129,7 @@ export const useStore = create<Store>((set, get) => ({
   banner: null,
   toastMsg: null,
   cur: null,
+  playerStartMinimized: true,
   playerQueue: [],
   playerQueueIdx: -1,
   drawerOpen: false,
@@ -135,14 +142,21 @@ export const useStore = create<Store>((set, get) => ({
   openPlayer(v, queue) {
     const q = queue || [];
     const idx = q.findIndex(item => item.id === v.id);
-    set({ cur: v, playerQueue: q, playerQueueIdx: idx >= 0 ? idx : 0 });
+    const queueIdx = idx >= 0 ? idx : 0;
+    set({ cur: v, playerQueue: q, playerQueueIdx: queueIdx, playerStartMinimized: false });
+    saveLastPlayed(v, q, queueIdx);
   },
-  closePlayer() { set({ cur: null, playerQueue: [], playerQueueIdx: -1 }); get().commitProg(); },
+  closePlayer() {
+    set({ playerStartMinimized: true });
+    get().commitProg();
+  },
   playNext() {
     const { playerQueue, playerQueueIdx } = get();
     const nextIdx = playerQueueIdx + 1;
     if (nextIdx < playerQueue.length) {
-      set({ cur: playerQueue[nextIdx], playerQueueIdx: nextIdx });
+      const nextVid = playerQueue[nextIdx];
+      set({ cur: nextVid, playerQueueIdx: nextIdx, playerStartMinimized: false });
+      saveLastPlayed(nextVid, playerQueue, nextIdx);
       return true;
     }
     return false;
@@ -151,7 +165,9 @@ export const useStore = create<Store>((set, get) => ({
     const { playerQueue, playerQueueIdx } = get();
     const prevIdx = playerQueueIdx - 1;
     if (prevIdx >= 0) {
-      set({ cur: playerQueue[prevIdx], playerQueueIdx: prevIdx });
+      const prevVid = playerQueue[prevIdx];
+      set({ cur: prevVid, playerQueueIdx: prevIdx, playerStartMinimized: false });
+      saveLastPlayed(prevVid, playerQueue, prevIdx);
       return true;
     }
     return false;
@@ -160,22 +176,33 @@ export const useStore = create<Store>((set, get) => ({
   setIsTabScreen(isTab) { set({ isTabScreen: isTab }); },
 
   async init() {
-    // Load device-local prefs + previous-visit stamp + user-selected channels
+    // Load device-local prefs + previous-visit stamp + user-selected channels + last played video
     try {
-      const [prefsRaw, visitRaw, userChansRaw] = await Promise.all([
+      const [prefsRaw, visitRaw, userChansRaw, lastPlayedRaw] = await Promise.all([
         AsyncStorage.getItem(PREFS_KEY),
         AsyncStorage.getItem(VISIT_KEY),
         AsyncStorage.getItem(USER_CHANNELS_KEY),
+        AsyncStorage.getItem(LAST_PLAYED_KEY),
       ]);
       const prefs = prefsRaw ? JSON.parse(prefsRaw) : {};
       const selectedChannelIds = userChansRaw ? JSON.parse(userChansRaw) : null;
+      const lastPlayed = lastPlayedRaw ? JSON.parse(lastPlayedRaw) : null;
 
-      set({
+      const patch: Partial<Store> = {
         hideShorts: !!prefs.hideShorts,
         autoRefreshMins: +prefs.autoRefreshMins || 0,
         lastSeen: Number(visitRaw) || 0,
         selectedChannelIds,
-      });
+      };
+
+      if (lastPlayed && lastPlayed.video && lastPlayed.video.id) {
+        patch.cur = lastPlayed.video;
+        patch.playerQueue = lastPlayed.queue || [lastPlayed.video];
+        patch.playerQueueIdx = lastPlayed.idx || 0;
+        patch.playerStartMinimized = true;
+      }
+
+      set(patch as any);
       await AsyncStorage.setItem(VISIT_KEY, String(Date.now()));
     } catch { /* ignore */ }
 
@@ -241,6 +268,7 @@ export const useStore = create<Store>((set, get) => ({
     if (_saveT) clearTimeout(_saveT);
     await googleSignOut();
     try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch { /* */ }
+    try { await AsyncStorage.removeItem(LAST_PLAYED_KEY); } catch { /* */ }
     setAuthToken(null);
     set({
       user: null, channels: [],
@@ -248,15 +276,43 @@ export const useStore = create<Store>((set, get) => ({
       pl: { items: [], cursors: {}, loaded: false },
       sel: null, selVideos: [], plDur: {}, plDurLoading: new Set<string>(),
       prog: emptyProg(), progV: get().progV + 1, filter: 'all', banner: null,
-      cur: null, playerQueue: [], playerQueueIdx: -1,
+      cur: null, playerStartMinimized: true, playerQueue: [], playerQueueIdx: -1,
     });
     get().toast('Signed out');
   },
 
   async afterLogin() {
     await get().loadChannels();
-    try { const { progress } = await api.getProgress(); set({ prog: normProg(progress), progV: get().progV + 1 }); }
-    catch (e) { console.warn('progress load failed', e); }
+    try {
+      const { progress } = await api.getProgress();
+      const norm = normProg(progress);
+      set({ prog: norm, progV: get().progV + 1 });
+
+      // If no cur video yet, check if there is a recently watched video in progress
+      if (!get().cur) {
+        const vEntries = Object.entries(norm.v || {});
+        if (vEntries.length > 0) {
+          vEntries.sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
+          const [vidId, vProg] = vEntries[0];
+          if (vProg && (vProg.title || vidId)) {
+            const restoredVid: Video = {
+              id: vidId,
+              title: vProg.title || 'Last Watched Video',
+              channelTitle: vProg.channelTitle || '',
+              channelId: '',
+              channelThumb: '',
+              thumb: vProg.thumb || `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg`,
+              published: '',
+              seconds: vProg.d || 0,
+            };
+            set({ cur: restoredVid, playerQueue: [restoredVid], playerQueueIdx: 0, playerStartMinimized: true });
+            saveLastPlayed(restoredVid, [restoredVid], 0);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('progress load failed', e);
+    }
     if (get().channels.length) get().runVideos(true);
   },
 
@@ -354,6 +410,17 @@ export const useStore = create<Store>((set, get) => ({
       } catch (e) { err = err || e; cursors[c.id] = { token: '', done: true }; }
     }));
     set({ vid: { buffers, cursors, loaded: true }, busy: false });
+
+    // If no video is selected yet (e.g. fresh install with no watch history), initialize miniplayer with top video from feed
+    if (!get().cur) {
+      const feed = feedItems(get());
+      if (feed.length > 0) {
+        const topVideo = feed[0];
+        set({ cur: topVideo, playerQueue: feed, playerQueueIdx: 0, playerStartMinimized: true });
+        saveLastPlayed(topVideo, feed, 0);
+      }
+    }
+
     if (feedItems(get()).length === 0 && err) get().showError(errMsg(err)); else get().hideError();
   },
 
