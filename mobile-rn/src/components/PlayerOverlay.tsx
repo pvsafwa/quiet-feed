@@ -9,13 +9,10 @@ import {
   TouchableWithoutFeedback,
   Share,
   BackHandler,
-  Modal,
-  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -34,18 +31,7 @@ import ExpoPip from '../../modules/expo-pip';
 
 const MINI_PLAYER_HEIGHT = 60;
 const TAB_BAR_HEIGHT = 60;
-
-const QUALITY_KEY = 'qf_player_quality';
-
-export const QUALITY_OPTIONS = [
-  { id: 'auto', label: 'Auto (Recommended)', short: 'Auto', badge: '' },
-  { id: 'hd1080', label: '1080p', short: '1080p', badge: 'HD' },
-  { id: 'hd720', label: '720p', short: '720p', badge: 'HD' },
-  { id: 'large', label: '480p', short: '480p', badge: 'SD' },
-  { id: 'medium', label: '360p', short: '360p', badge: 'SD' },
-  { id: 'small', label: '240p', short: '240p', badge: 'SD' },
-  { id: 'tiny', label: '144p', short: '144p', badge: 'SD' },
-];
+const AUTO_PLAY_COUNTDOWN_SEC = 4;
 
 export function PlayerOverlay() {
   const cur = useStore(s => s.cur);
@@ -68,6 +54,7 @@ function PlayerWindow({ video }: { video: Video }) {
   const playerRef = useRef<any>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPlayTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const tcRef = useRef(0);
 
   const [wantPlay, setWantPlay] = useState(true);
@@ -76,9 +63,16 @@ function PlayerWindow({ video }: { video: Video }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(video.seconds || 0);
 
-  // Quality selector state
-  const [quality, setQuality] = useState('auto');
-  const [qualityModalOpen, setQualityModalOpen] = useState(false);
+  // Auto-play next video state
+  const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
+  const [cancelledAutoPlay, setCancelledAutoPlay] = useState(false);
+
+  // Queue context from store
+  const playerQueue = useStore(s => s.playerQueue);
+  const playerQueueIdx = useStore(s => s.playerQueueIdx);
+  const hasNext = playerQueueIdx >= 0 && playerQueueIdx < playerQueue.length - 1;
+  const hasPrev = playerQueueIdx > 0;
+  const nextVideo = hasNext ? playerQueue[playerQueueIdx + 1] : null;
 
   // Landscape controls visibility
   const [showLandscapeControls, setShowLandscapeControls] = useState(true);
@@ -86,17 +80,6 @@ function PlayerWindow({ video }: { video: Video }) {
   // Resume point
   const pr = useStore.getState().prog.v[video.id];
   const startAt = pr && !pr.done && pr.p > 10 && (!pr.d || pr.p < pr.d * 0.95) ? Math.floor(pr.p) : 0;
-
-  // Load preferred quality
-  useEffect(() => {
-    AsyncStorage.getItem(QUALITY_KEY)
-      .then(saved => {
-        if (saved) {
-          setQuality(saved);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   // Handle Android hardware back press when in landscape mode
   useEffect(() => {
@@ -153,6 +136,16 @@ function PlayerWindow({ video }: { video: Video }) {
       subStop.remove();
     };
   }, [ended]);
+
+  // Clear auto play timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoPlayTimer.current) {
+        clearInterval(autoPlayTimer.current);
+        autoPlayTimer.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!playing) {
@@ -211,11 +204,41 @@ function PlayerWindow({ video }: { video: Video }) {
       if (hideControlsTimer.current) {
         clearTimeout(hideControlsTimer.current);
       }
+      if (autoPlayTimer.current) {
+        clearInterval(autoPlayTimer.current);
+      }
       useStore.getState().commitProg();
       ExpoPip.stopPlayback();
       ExpoPip.setOrientationPortrait();
     };
   }, []);
+
+  const handlePlayNext = () => {
+    if (autoPlayTimer.current) {
+      clearInterval(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    }
+    setAutoPlayCountdown(null);
+    useStore.getState().playNext();
+  };
+
+  const handlePlayPrev = () => {
+    if (autoPlayTimer.current) {
+      clearInterval(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    }
+    setAutoPlayCountdown(null);
+    useStore.getState().playPrev();
+  };
+
+  const handleCancelAutoPlay = () => {
+    if (autoPlayTimer.current) {
+      clearInterval(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    }
+    setAutoPlayCountdown(null);
+    setCancelledAutoPlay(true);
+  };
 
   const onChangeState = (state: string) => {
     if (__DEV__) console.log('[player state]', state);
@@ -228,17 +251,36 @@ function PlayerWindow({ video }: { video: Video }) {
       setEnded(true);
       setCurrentTime(totalDuration);
       ExpoPip.stopPlayback();
+
+      // Check if continuous auto-play should trigger
+      const currentQueue = useStore.getState().playerQueue;
+      const currentIdx = useStore.getState().playerQueueIdx;
+      const canPlayNext = currentIdx >= 0 && currentIdx < currentQueue.length - 1;
+
+      if (canPlayNext && !cancelledAutoPlay) {
+        let count = AUTO_PLAY_COUNTDOWN_SEC;
+        setAutoPlayCountdown(count);
+        if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+        autoPlayTimer.current = setInterval(() => {
+          count -= 1;
+          if (count <= 0) {
+            if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+            autoPlayTimer.current = null;
+            setAutoPlayCountdown(null);
+            useStore.getState().playNext();
+          } else {
+            setAutoPlayCountdown(count);
+          }
+        }, 1000);
+      }
       return;
     }
     if (state === 'playing') {
       setPlaying(true);
       setEnded(false);
+      setAutoPlayCountdown(null);
       ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
       ExpoPip.setPlaybackState(true);
-      // Apply quality on play if set
-      if (quality && quality !== 'auto') {
-        playerRef.current?.setPlaybackQuality?.(quality);
-      }
       return;
     }
     if (state === 'buffering' || state === 'unstarted') {
@@ -247,17 +289,6 @@ function PlayerWindow({ video }: { video: Video }) {
     setPlaying(false);
     if (state === 'paused') setWantPlay(false);
     ExpoPip.setPlaybackState(false);
-  };
-
-  const handleSelectQuality = async (qId: string) => {
-    setQuality(qId);
-    setQualityModalOpen(false);
-    playerRef.current?.setPlaybackQuality?.(qId);
-    const opt = QUALITY_OPTIONS.find(o => o.id === qId);
-    useStore.getState().toast(`Quality: ${opt?.label || qId}`);
-    try {
-      await AsyncStorage.setItem(QUALITY_KEY, qId);
-    } catch {}
   };
 
   const toggleFullscreen = () => {
@@ -269,6 +300,11 @@ function PlayerWindow({ video }: { video: Video }) {
   };
 
   const handleReplay = () => {
+    if (autoPlayTimer.current) {
+      clearInterval(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    }
+    setAutoPlayCountdown(null);
     resetHideTimer();
     playerRef.current?.seekTo(0, true);
     setCurrentTime(0);
@@ -327,6 +363,10 @@ function PlayerWindow({ video }: { video: Video }) {
     if (tickRef.current) {
       clearInterval(tickRef.current);
       tickRef.current = null;
+    }
+    if (autoPlayTimer.current) {
+      clearInterval(autoPlayTimer.current);
+      autoPlayTimer.current = null;
     }
     ExpoPip.stopPlayback();
     ExpoPip.setOrientationPortrait();
@@ -398,8 +438,6 @@ function PlayerWindow({ video }: { video: Video }) {
   const prog = useStore(s => s.prog);
   const done = isDone(prog, video.id);
 
-  const currentQualityOption = QUALITY_OPTIONS.find(o => o.id === quality) || QUALITY_OPTIONS[0];
-
   return (
     <View style={styles.rootWrapper} pointerEvents="box-none">
       <GestureDetector gesture={panGesture}>
@@ -414,7 +452,14 @@ function PlayerWindow({ video }: { video: Video }) {
                 <Pressable hitSlop={14} onPress={minimize} style={styles.topBtn}>
                   <Ionicons name="chevron-down" size={24} color={colors.ink} />
                 </Pressable>
-                <Text style={styles.topBarTitle} numberOfLines={1}>Now Playing</Text>
+                <View style={styles.topBarTitleContainer}>
+                  <Text style={styles.topBarTitle} numberOfLines={1}>Now Playing</Text>
+                  {playerQueue.length > 1 && (
+                    <Text style={styles.topBarQueueCount}>
+                      {playerQueueIdx + 1} of {playerQueue.length}
+                    </Text>
+                  )}
+                </View>
                 <Pressable hitSlop={14} onPress={closePlayer} style={styles.topBtn}>
                   <Ionicons name="close" size={24} color={colors.ink} />
                 </Pressable>
@@ -458,6 +503,27 @@ function PlayerWindow({ video }: { video: Video }) {
                 />
               </View>
 
+              {/* AUTO-PLAY "UP NEXT" COUNTDOWN OVERLAY */}
+              {ended && autoPlayCountdown !== null && nextVideo && (
+                <View style={styles.autoPlayOverlay}>
+                  <View style={styles.autoPlayCard}>
+                    <Text style={styles.autoPlayHeader}>Up next in {autoPlayCountdown}s</Text>
+                    <Text style={styles.autoPlayTitle} numberOfLines={2}>{nextVideo.title}</Text>
+                    <Text style={styles.autoPlaySub} numberOfLines={1}>{nextVideo.channelTitle}</Text>
+                    
+                    <View style={styles.autoPlayActions}>
+                      <Pressable style={styles.autoPlayCancelBtn} onPress={handleCancelAutoPlay}>
+                        <Text style={styles.autoPlayCancelText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable style={styles.autoPlayNowBtn} onPress={handlePlayNext}>
+                        <Ionicons name="play" size={16} color={colors.onAccent} />
+                        <Text style={styles.autoPlayNowText}>Play Now</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              )}
+
               {/* LANDSCAPE IMMERSIVE OVERLAY HUD */}
               {isLandscape ? (
                 <Pressable
@@ -476,13 +542,12 @@ function PlayerWindow({ video }: { video: Video }) {
                         </Pressable>
                         <View style={styles.landscapeTitleWrap}>
                           <Text style={styles.landscapeVideoTitle} numberOfLines={1}>{video.title}</Text>
-                          <Text style={styles.landscapeChannelTitle} numberOfLines={1}>{video.channelTitle}</Text>
+                          <Text style={styles.landscapeChannelTitle} numberOfLines={1}>
+                            {video.channelTitle}
+                            {playerQueue.length > 1 ? ` · ${playerQueueIdx + 1}/${playerQueue.length}` : ''}
+                          </Text>
                         </View>
                         <View style={styles.landscapeTopRight}>
-                          <Pressable hitSlop={10} onPress={() => setQualityModalOpen(true)} style={styles.hudBadgeBtn}>
-                            <Ionicons name="settings-outline" size={17} color="#fff" />
-                            <Text style={styles.hudBadgeText}>{currentQualityOption.short}</Text>
-                          </Pressable>
                           <Pressable hitSlop={10} onPress={handleShare} style={styles.hudIconBtn}>
                             <Ionicons name="share-social-outline" size={22} color="#fff" />
                           </Pressable>
@@ -494,12 +559,19 @@ function PlayerWindow({ video }: { video: Video }) {
 
                       {/* Center Playback Controls in Landscape */}
                       <View style={styles.landscapeCenterControls}>
+                        {hasPrev && (
+                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayPrev}>
+                            <Ionicons name="play-skip-back" size={26} color="#fff" />
+                            <Text style={styles.landscapeCenterLabel}>Prev</Text>
+                          </Pressable>
+                        )}
+
                         <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(-10)}>
                           <Ionicons name="play-back" size={30} color="#fff" />
                           <Text style={styles.landscapeCenterLabel}>-10s</Text>
                         </Pressable>
 
-                        {ended ? (
+                        {ended && autoPlayCountdown === null ? (
                           <Pressable style={styles.landscapePlayOrb} onPress={handleReplay}>
                             <Ionicons name="refresh" size={38} color="#fff" />
                           </Pressable>
@@ -513,6 +585,13 @@ function PlayerWindow({ video }: { video: Video }) {
                           <Ionicons name="play-forward" size={30} color="#fff" />
                           <Text style={styles.landscapeCenterLabel}>+10s</Text>
                         </Pressable>
+
+                        {hasNext && (
+                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayNext}>
+                            <Ionicons name="play-skip-forward" size={26} color="#fff" />
+                            <Text style={styles.landscapeCenterLabel}>Next</Text>
+                          </Pressable>
+                        )}
                       </View>
 
                       {/* Bottom Bar in Landscape */}
@@ -542,11 +621,11 @@ function PlayerWindow({ video }: { video: Video }) {
               ) : (
                 /* PORTRAIT VIDEO OVERLAY */
                 <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
-                  {ended ? (
+                  {ended && autoPlayCountdown === null ? (
                     <Pressable style={styles.orb} onPress={handleReplay}>
                       <Ionicons name="refresh" size={32} color={colors.onAccent} />
                     </Pressable>
-                  ) : !playing ? (
+                  ) : !playing && autoPlayCountdown === null ? (
                     <View style={styles.orb}>
                       <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
                     </View>
@@ -584,10 +663,17 @@ function PlayerWindow({ video }: { video: Video }) {
 
                 {/* CONTROLS & ACTION BUTTONS */}
                 <View style={styles.controlsBar}>
-                  <Pressable style={styles.controlAction} onPress={handleReplay}>
-                    <Ionicons name="refresh" size={20} color={colors.ink} />
-                    <Text style={styles.controlLabel}>Restart</Text>
-                  </Pressable>
+                  {hasPrev ? (
+                    <Pressable style={styles.controlAction} onPress={handlePlayPrev}>
+                      <Ionicons name="play-skip-back" size={20} color={colors.ink} />
+                      <Text style={styles.controlLabel}>Prev</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable style={styles.controlAction} onPress={handleReplay}>
+                      <Ionicons name="refresh" size={20} color={colors.ink} />
+                      <Text style={styles.controlLabel}>Restart</Text>
+                    </Pressable>
+                  )}
 
                   <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(-10)}>
                     <Ionicons name="play-back" size={20} color={colors.ink} />
@@ -603,11 +689,12 @@ function PlayerWindow({ video }: { video: Video }) {
                     <Text style={styles.controlLabel}>+10s</Text>
                   </Pressable>
 
-                  {/* Quality Button */}
-                  <Pressable style={styles.controlAction} onPress={() => setQualityModalOpen(true)}>
-                    <Ionicons name="settings-outline" size={20} color={colors.accent} />
-                    <Text style={[styles.controlLabel, { color: colors.accent, fontWeight: '700' }]}>{currentQualityOption.short}</Text>
-                  </Pressable>
+                  {hasNext && (
+                    <Pressable style={styles.controlAction} onPress={handlePlayNext}>
+                      <Ionicons name="play-skip-forward" size={20} color={colors.accent} />
+                      <Text style={[styles.controlLabel, { color: colors.accent, fontWeight: '700' }]}>Next</Text>
+                    </Pressable>
+                  )}
 
                   {/* Fullscreen Landscape Toggle */}
                   <Pressable style={styles.controlAction} onPress={toggleFullscreen}>
@@ -630,6 +717,19 @@ function PlayerWindow({ video }: { video: Video }) {
                 <View style={styles.info}>
                   <Text style={styles.title}>{video.title}</Text>
                   <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
+                  
+                  {hasNext && nextVideo && (
+                    <Pressable style={styles.upNextBanner} onPress={handlePlayNext}>
+                      <View style={styles.upNextBannerLeft}>
+                        <Ionicons name="play-forward-circle" size={22} color={colors.accent} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.upNextBannerLabel}>NEXT IN QUEUE</Text>
+                          <Text style={styles.upNextBannerTitle} numberOfLines={1}>{nextVideo.title}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
+                    </Pressable>
+                  )}
                 </View>
               </>
             )}
@@ -648,9 +748,11 @@ function PlayerWindow({ video }: { video: Video }) {
                   <Text style={styles.miniTitle} numberOfLines={1}>{video.title}</Text>
                   <Text style={styles.miniSub} numberOfLines={1}>{video.channelTitle}</Text>
                 </View>
-                <Pressable hitSlop={12} onPress={() => setQualityModalOpen(true)} style={styles.miniBtn}>
-                  <Ionicons name="settings-outline" size={20} color={colors.inkSoft} />
-                </Pressable>
+                {hasNext && (
+                  <Pressable hitSlop={12} onPress={handlePlayNext} style={styles.miniBtn}>
+                    <Ionicons name="play-skip-forward" size={20} color={colors.accent} />
+                  </Pressable>
+                )}
                 <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.miniBtn}>
                   <Ionicons name="expand" size={20} color={colors.inkSoft} />
                 </Pressable>
@@ -666,60 +768,6 @@ function PlayerWindow({ video }: { video: Video }) {
 
         </Animated.View>
       </GestureDetector>
-
-      {/* QUALITY SELECTION MODAL */}
-      <Modal
-        visible={qualityModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setQualityModalOpen(false)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setQualityModalOpen(false)}>
-          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderIcon}>
-                <Ionicons name="settings" size={20} color={colors.accent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Playback Quality</Text>
-                <Text style={styles.modalSub}>Select your preferred resolution</Text>
-              </View>
-              <Pressable hitSlop={10} onPress={() => setQualityModalOpen(false)} style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={22} color={colors.inkSoft} />
-              </Pressable>
-            </View>
-
-            <ScrollView style={{ maxHeight: 320 }}>
-              {QUALITY_OPTIONS.map(opt => {
-                const isSelected = quality === opt.id;
-                return (
-                  <Pressable
-                    key={opt.id}
-                    style={[styles.qualityRow, isSelected && styles.qualityRowActive]}
-                    onPress={() => handleSelectQuality(opt.id)}
-                  >
-                    <View style={styles.qualityLabelWrap}>
-                      <Text style={[styles.qualityText, isSelected && styles.qualityTextActive]}>
-                        {opt.label}
-                      </Text>
-                      {opt.badge ? (
-                        <View style={[styles.badge, isSelected && styles.badgeActive]}>
-                          <Text style={[styles.badgeText, isSelected && styles.badgeTextActive]}>
-                            {opt.badge}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    {isSelected && (
-                      <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -741,6 +789,9 @@ const styles = StyleSheet.create({
   topBtn: {
     padding: 6,
   },
+  topBarTitleContainer: {
+    alignItems: 'center',
+  },
   topBarTitle: {
     color: colors.inkSoft,
     fontSize: 13,
@@ -748,10 +799,86 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  topBarQueueCount: {
+    color: colors.inkFaint,
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
 
   videoOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   transparentOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.01)' },
   orb: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center' },
+
+  /* AUTO-PLAY OVERLAY */
+  autoPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    zIndex: 10,
+  },
+  autoPlayCard: {
+    alignItems: 'center',
+    maxWidth: 320,
+    width: '100%',
+  },
+  autoPlayHeader: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  autoPlayTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 4,
+  },
+  autoPlaySub: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  autoPlayActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  autoPlayCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  autoPlayCancelText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  autoPlayNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  autoPlayNowText: {
+    color: colors.onAccent,
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   /* LANDSCAPE IMMERSIVE OVERLAY STYLES */
   landscapeTouchArea: {
@@ -796,26 +923,12 @@ const styles = StyleSheet.create({
   hudIconBtn: {
     padding: 8,
   },
-  hudBadgeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-  },
-  hudBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
 
   landscapeCenterControls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 40,
+    gap: 32,
   },
   landscapeCenterBtn: {
     alignItems: 'center',
@@ -920,7 +1033,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 4,
     gap: 2,
-    minWidth: 40,
+    minWidth: 38,
   },
   controlLabel: {
     color: colors.inkSoft,
@@ -940,6 +1053,37 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontSize: 17, fontWeight: '700', lineHeight: 23, marginBottom: 6 },
   sub: { color: colors.inkSoft, fontSize: 13.5 },
 
+  upNextBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.bg2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    padding: 12,
+    marginTop: 14,
+  },
+  upNextBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  upNextBannerLabel: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  upNextBannerTitle: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+
   miniPlayer: { position: 'absolute', top: 0, left: 0, right: 0, height: MINI_PLAYER_HEIGHT, backgroundColor: colors.bg2, borderTopWidth: 1, borderTopColor: colors.line },
   miniProgBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 2.5, backgroundColor: 'rgba(255,255,255,0.1)' },
   miniProgFill: { height: '100%', backgroundColor: colors.accent },
@@ -948,92 +1092,4 @@ const styles = StyleSheet.create({
   miniTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '600' },
   miniSub: { color: colors.inkSoft, fontSize: 12, marginTop: 1 },
   miniBtn: { padding: 6, marginHorizontal: 1 },
-
-  /* QUALITY MODAL SHEET */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    padding: 20,
-    paddingBottom: 36,
-    maxHeight: '65%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  modalHeaderIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.bg3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalTitle: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  modalSub: {
-    color: colors.inkSoft,
-    fontSize: 12.5,
-    marginTop: 2,
-  },
-  modalCloseBtn: {
-    padding: 6,
-  },
-  qualityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: radius.sm,
-    marginVertical: 2,
-  },
-  qualityRowActive: {
-    backgroundColor: colors.bg2,
-  },
-  qualityLabelWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  qualityText: {
-    color: colors.inkSoft,
-    fontSize: 14.5,
-    fontWeight: '500',
-  },
-  qualityTextActive: {
-    color: colors.ink,
-    fontWeight: '700',
-  },
-  badge: {
-    backgroundColor: colors.bg3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  badgeActive: {
-    backgroundColor: colors.accent,
-  },
-  badgeText: {
-    color: colors.inkSoft,
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  badgeTextActive: {
-    color: colors.onAccent,
-  },
 });

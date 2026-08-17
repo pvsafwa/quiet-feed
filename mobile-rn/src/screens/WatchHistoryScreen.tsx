@@ -23,7 +23,7 @@ export function WatchHistoryScreen() {
       maxToRenderPerBatch={5}
       windowSize={11}
       removeClippedSubviews={true}
-      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item)} />}
+      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item, list)} />}
       ListEmptyComponent={
         <View style={styles.empty}>
           <Ionicons name="time-outline" size={40} color={colors.accent} />

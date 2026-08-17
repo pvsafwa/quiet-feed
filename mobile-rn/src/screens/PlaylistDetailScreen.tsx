@@ -64,7 +64,7 @@ export function PlaylistDetailScreen() {
       windowSize={11}
       removeClippedSubviews={true}
       ListHeaderComponent={header}
-      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item)} />}
+      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item, here)} />}
       ListEmptyComponent={<Text style={styles.empty}>{busy ? 'Loading…' : 'No playable videos here.'}</Text>}
     />
   );

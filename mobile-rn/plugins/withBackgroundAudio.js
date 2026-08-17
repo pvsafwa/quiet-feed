@@ -343,8 +343,19 @@ function withAndroidPipMainActivity(config) {
       }
 
       if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+        val launchIntent = android.content.Intent(this, MainActivity::class.java).apply {
+          action = android.content.Intent.ACTION_MAIN
+          addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        }
+        val launchPendingIntent = android.app.PendingIntent.getActivity(
+          this, 0, launchIntent,
+          android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
         if (mediaSession == null) {
           mediaSession = android.media.session.MediaSession(this, "QuietFeedMediaSession").apply {
+            setSessionActivity(launchPendingIntent)
             setCallback(object : android.media.session.MediaSession.Callback() {
               override fun onPlay() {
                 updatePlaybackState(true)
@@ -442,6 +453,7 @@ function withAndroidPipMainActivity(config) {
           .setAutoCancel(!playing)
           .setStyle(mediaStyle)
           .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+          .setContentIntent(launchPendingIntent)
           .setDeleteIntent(pendingStopIntent)
           .addAction(
             android.app.Notification.Action.Builder(

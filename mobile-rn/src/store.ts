@@ -50,6 +50,8 @@ export interface Store {
   banner: string | null;
   toastMsg: { msg: string; err: boolean; id: number } | null;
   cur: Video | null;
+  playerQueue: Video[];      // The list context when player was opened
+  playerQueueIdx: number;    // Index of cur in playerQueue
 
   // In-app update state
   updateRelease: AppRelease | null;
@@ -57,8 +59,10 @@ export interface Store {
   checkingUpdate: boolean;
 
   init(): Promise<void>;
-  openPlayer(v: Video): void;
+  openPlayer(v: Video, queue?: Video[]): void;
   closePlayer(): void;
+  playNext(): boolean;
+  playPrev(): boolean;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   afterLogin(): Promise<void>;
@@ -115,13 +119,37 @@ export const useStore = create<Store>((set, get) => ({
   banner: null,
   toastMsg: null,
   cur: null,
+  playerQueue: [],
+  playerQueueIdx: -1,
 
   updateRelease: null,
   updateModalOpen: false,
   checkingUpdate: false,
 
-  openPlayer(v) { set({ cur: v }); },
-  closePlayer() { set({ cur: null }); get().commitProg(); },
+  openPlayer(v, queue) {
+    const q = queue || [];
+    const idx = q.findIndex(item => item.id === v.id);
+    set({ cur: v, playerQueue: q, playerQueueIdx: idx >= 0 ? idx : 0 });
+  },
+  closePlayer() { set({ cur: null, playerQueue: [], playerQueueIdx: -1 }); get().commitProg(); },
+  playNext() {
+    const { playerQueue, playerQueueIdx } = get();
+    const nextIdx = playerQueueIdx + 1;
+    if (nextIdx < playerQueue.length) {
+      set({ cur: playerQueue[nextIdx], playerQueueIdx: nextIdx });
+      return true;
+    }
+    return false;
+  },
+  playPrev() {
+    const { playerQueue, playerQueueIdx } = get();
+    const prevIdx = playerQueueIdx - 1;
+    if (prevIdx >= 0) {
+      set({ cur: playerQueue[prevIdx], playerQueueIdx: prevIdx });
+      return true;
+    }
+    return false;
+  },
 
   async init() {
     // Load device-local prefs + previous-visit stamp + user-selected channels
@@ -212,7 +240,7 @@ export const useStore = create<Store>((set, get) => ({
       pl: { items: [], cursors: {}, loaded: false },
       sel: null, selVideos: [], plDur: {}, plDurLoading: new Set<string>(),
       prog: emptyProg(), progV: get().progV + 1, filter: 'all', banner: null,
-      cur: null,
+      cur: null, playerQueue: [], playerQueueIdx: -1,
     });
     get().toast('Signed out');
   },

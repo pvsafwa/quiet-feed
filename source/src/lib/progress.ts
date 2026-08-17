@@ -20,7 +20,8 @@ export function addWatch(prog: Prog, id: string, secs: number, dur?: number): vo
 }
 export function setPos(prog: Prog, id: string, pos: number, dur?: number): void {
   const v = ensureV(prog, id, dur);
-  if (pos > v.p) v.p = pos;
+  v.p = pos;
+  v.t = Date.now();
 }
 export function markDone(prog: Prog, id: string, dur?: number): void {
   const v = ensureV(prog, id, dur);

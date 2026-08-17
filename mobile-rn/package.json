@@ -1,6 +1,6 @@
 {
   "name": "quiet-feed-mobile",
-  "version": "1.0.22",
+  "version": "1.0.22a",
   "private": true,
   "main": "index.ts",
   "scripts": {

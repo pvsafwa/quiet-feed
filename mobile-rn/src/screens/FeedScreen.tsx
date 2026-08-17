@@ -52,7 +52,7 @@ export function FeedScreen() {
       windowSize={11}
       removeClippedSubviews={true}
       ListHeaderComponent={header}
-      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item)} />}
+      renderItem={({ item }) => <VideoCard v={item} onPress={() => useStore.getState().openPlayer(item, list)} />}
       refreshControl={<RefreshControl refreshing={busy && list.length > 0} onRefresh={() => runVideos(true)} tintColor={colors.accent} />}
       onEndReachedThreshold={0.6}
       onEndReached={() => { if (more && !busy) runVideos(false); }}
