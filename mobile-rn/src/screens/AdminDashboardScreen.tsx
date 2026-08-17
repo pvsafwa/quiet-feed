@@ -81,6 +81,10 @@ function formatJoinedDate(isoString?: string): string {
 
 export function AdminDashboardScreen() {
   const fetchAdminData = useStore(s => s.fetchAdminDashboardData);
+  const cur = useStore(s => s.cur);
+  const insets = useSafeAreaInsets();
+  const bottomPad = insets.bottom + (cur ? 60 + 36 : 36);
+
   const [users, setUsers] = useState<AdminUserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -173,10 +177,6 @@ export function AdminDashboardScreen() {
       </View>
     );
   }
-
-  const insets = useSafeAreaInsets();
-  const cur = useStore(s => s.cur);
-  const bottomPad = insets.bottom + (cur ? 60 + 36 : 36);
 
   return (
     <ScrollView
