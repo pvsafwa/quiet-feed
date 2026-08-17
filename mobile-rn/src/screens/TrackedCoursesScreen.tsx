@@ -19,10 +19,12 @@ export function TrackedCoursesScreen() {
     return { id, title: meta.title, channel: meta.channelTitle || pl.channel || '', channelId: meta.channelId || pl.channelId || '', total: pl.total || 0, done, tot, pct: tot ? Math.round((done / tot) * 100) : 0 };
   });
 
+  const cur = useStore(s => s.cur);
+
   return (
     <FlatList
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: cur ? 100 : 32 }]}
       data={mon}
       keyExtractor={(m) => m.id}
       initialNumToRender={8}

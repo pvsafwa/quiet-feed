@@ -53,10 +53,12 @@ export function PlaylistDetailScreen() {
     </View>
   );
 
+  const cur = useStore(s => s.cur);
+
   return (
     <FlatList
       style={{ backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: cur ? 100 : 32 }}
       data={here}
       keyExtractor={(v) => v.id}
       initialNumToRender={8}

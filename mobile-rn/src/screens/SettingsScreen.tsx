@@ -59,8 +59,10 @@ export function SettingsScreen() {
     return selectedChannelIds.includes(id);
   };
 
+  const cur = useStore(s => s.cur);
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18, paddingBottom: 40 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18, paddingBottom: cur ? 100 : 40 }}>
       <Text style={styles.h2}>Account</Text>
       <View style={styles.acct}>
         {user?.picture ? <Image source={{ uri: user.picture }} style={styles.av} /> : <View style={[styles.av, { backgroundColor: colors.bg3 }]} />}

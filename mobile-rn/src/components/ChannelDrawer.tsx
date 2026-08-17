@@ -52,7 +52,7 @@ export function ChannelDrawer(props: DrawerContentComponentProps) {
   };
 
   return (
-    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}>
+    <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 8, paddingBottom: 48 }}>
       <Text style={styles.title}>Channels</Text>
 
       {/* All Channels option */}

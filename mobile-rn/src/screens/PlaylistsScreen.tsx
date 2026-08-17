@@ -19,6 +19,7 @@ export function PlaylistsScreen() {
   const selectedChannelIds = useStore(s => s.selectedChannelIds);
   const activeChannels = useStore(useShallow(userActiveChannels));
   const plDur = useStore(s => s.plDur);
+  const cur = useStore(s => s.cur);
   const prog = useStore(s => s.prog);
   useStore(s => s.progV);
   const runPlaylists = useStore(s => s.runPlaylists);
@@ -46,7 +47,7 @@ export function PlaylistsScreen() {
   // When no channel is selected, prompt user to select a channel
   if (filter === 'all') {
     return (
-      <ScrollView style={styles.pickerContainer} contentContainerStyle={styles.pickerContent}>
+      <ScrollView style={styles.pickerContainer} contentContainerStyle={[styles.pickerContent, { paddingBottom: cur ? 140 : 40 }]}>
         <View style={styles.promptHeader}>
           <View style={styles.promptIconCircle}>
             <Ionicons name="folder-open-outline" size={32} color={colors.accent} />
@@ -104,7 +105,7 @@ export function PlaylistsScreen() {
 
       <FlatList
         style={{ backgroundColor: colors.bg }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: cur ? 140 : 32 }}
         data={list}
         keyExtractor={(p) => p.id}
         initialNumToRender={8}

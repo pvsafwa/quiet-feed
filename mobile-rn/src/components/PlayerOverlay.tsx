@@ -30,7 +30,7 @@ import { colors, radius } from '../theme';
 import ExpoPip from '../../modules/expo-pip';
 
 const MINI_PLAYER_HEIGHT = 60;
-const TAB_BAR_HEIGHT = 60;
+const TAB_BAR_HEIGHT = 56;
 const AUTO_PLAY_COUNTDOWN_SEC = 4;
 
 export function PlayerOverlay() {
@@ -43,6 +43,7 @@ function PlayerWindow({ video }: { video: Video }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  const drawerOpen = useStore(s => s.drawerOpen);
 
   // Y-translation to dock the mini player above the bottom tab bar.
   const MAX_Y = height - insets.bottom - TAB_BAR_HEIGHT - MINI_PLAYER_HEIGHT;
@@ -419,7 +420,7 @@ function PlayerWindow({ video }: { video: Video }) {
   });
 
   const animatedMiniStyle = useAnimatedStyle(() => {
-    if (isLandscape) {
+    if (isLandscape || drawerOpen) {
       return { opacity: 0, pointerEvents: 'none' };
     }
     const opacity = interpolate(translateY.value, [MAX_Y / 2, MAX_Y], [0, 1], Extrapolation.CLAMP);
@@ -439,7 +440,7 @@ function PlayerWindow({ video }: { video: Video }) {
   const done = isDone(prog, video.id);
 
   return (
-    <View style={styles.rootWrapper} pointerEvents="box-none">
+    <View style={styles.rootWrapper} pointerEvents={drawerOpen ? 'none' : 'box-none'}>
       <GestureDetector gesture={panGesture}>
         <Animated.View pointerEvents="box-none" style={[styles.container, animatedContainerStyle]}>
 

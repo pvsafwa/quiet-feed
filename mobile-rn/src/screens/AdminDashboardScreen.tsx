@@ -102,10 +102,12 @@ export function AdminDashboardScreen() {
     );
   }
 
+  const cur = useStore(s => s.cur);
+
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: cur ? 100 : 36 }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
     >
       {/* Overview Metric Cards */}

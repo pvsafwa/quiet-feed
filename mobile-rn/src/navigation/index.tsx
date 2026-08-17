@@ -15,6 +15,7 @@ import { TrackedCoursesScreen } from '../screens/TrackedCoursesScreen';
 import { WatchHistoryScreen } from '../screens/WatchHistoryScreen';
 import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
 import { ChannelDrawer } from '../components/ChannelDrawer';
+import { useStore } from '../store';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -48,7 +49,14 @@ function Tabs() {
         headerTintColor: colors.ink,
         headerLeft: () => <MenuButton />,
         headerRight: () => <SettingsButton />,
-        tabBarStyle: { backgroundColor: colors.bg2, borderTopColor: colors.line },
+        tabBarStyle: {
+          backgroundColor: colors.bg2,
+          borderTopColor: colors.line,
+          height: 56,
+          paddingBottom: 6,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.inkFaint,
         tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name] || 'ellipse'} size={size} color={color} />,
@@ -66,6 +74,12 @@ function MainDrawer() {
     <Drawer.Navigator
       id="LeftDrawer"
       drawerContent={(props) => <ChannelDrawer {...props} />}
+      screenListeners={{
+        state: (e: any) => {
+          const isDrawerOpen = e.data?.state?.history?.some((h: any) => h.type === 'drawer');
+          useStore.getState().setDrawerOpen(Boolean(isDrawerOpen));
+        },
+      }}
       screenOptions={{ headerShown: false, drawerStyle: { backgroundColor: colors.bg2, width: 290 } }}
     >
       <Drawer.Screen name="Tabs" component={Tabs} />

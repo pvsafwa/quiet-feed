@@ -24,8 +24,10 @@ export function ProgressScreen() {
     { v: `${st.cur} 🔥`, l: `Streak · best ${st.max}` },
   ];
 
+  const cur = useStore(s => s.cur);
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: cur ? 140 : 32 }}>
       <View style={styles.statGrid}>
         {cards.map((c, i) => (
           <View key={i} style={styles.stat}>

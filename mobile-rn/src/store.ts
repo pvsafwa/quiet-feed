@@ -52,6 +52,7 @@ export interface Store {
   cur: Video | null;
   playerQueue: Video[];      // The list context when player was opened
   playerQueueIdx: number;    // Index of cur in playerQueue
+  drawerOpen: boolean;
 
   // In-app update state
   updateRelease: AppRelease | null;
@@ -63,6 +64,7 @@ export interface Store {
   closePlayer(): void;
   playNext(): boolean;
   playPrev(): boolean;
+  setDrawerOpen(open: boolean): void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   afterLogin(): Promise<void>;
@@ -121,6 +123,7 @@ export const useStore = create<Store>((set, get) => ({
   cur: null,
   playerQueue: [],
   playerQueueIdx: -1,
+  drawerOpen: false,
 
   updateRelease: null,
   updateModalOpen: false,
@@ -150,6 +153,7 @@ export const useStore = create<Store>((set, get) => ({
     }
     return false;
   },
+  setDrawerOpen(open) { set({ drawerOpen: open }); },
 
   async init() {
     // Load device-local prefs + previous-visit stamp + user-selected channels
