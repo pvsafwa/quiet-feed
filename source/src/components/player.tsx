@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { addWatch, setPos, markDone, isDone } from '../lib/progress';
 import { ago, views as fmtViews, fmtDur } from '../lib/format';
 import { bgPlay, bgPause, bgDestroy } from '../lib/bgaudio';
-import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause, ICheck, IGear, IRefresh } from './states';
+import { IClose, IVideo, IVideoOff, IExpand, IPlay, IPause, ICheck, IGear, IRefresh } from './states';
 
 // Decorative equalizer shown when the video is hidden (audio-only mode).
 function AudioViz({ playing, title, channel }: { playing: boolean; title: string; channel: string }) {
@@ -37,8 +37,15 @@ const QUALITY_OPTIONS = [
 
 export function PlayerModal() {
   const cur = useStore(s => s.cur);
+  const playerQueue = useStore(s => s.playerQueue);
+  const playerQueueIdx = useStore(s => s.playerQueueIdx);
+  const playerStartMinimized = useStore(s => s.playerStartMinimized);
+  const playNext = useStore(s => s.playNext);
+  const playPrev = useStore(s => s.playPrev);
   const close = useStore(s => s.closePlayer);
   const prog = useStore(s => s.prog);
+  const progV = useStore(s => s.progV);
+
   const frameRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const tickRef = useRef<any>(null);
@@ -53,17 +60,45 @@ export function PlayerModal() {
   const [descOpen, setDescOpen] = useState(false);
   const [videoOff, setVideoOff] = useState(true);
   const [playing, setPlaying] = useState(false);
-  const [pip, setPip] = useState(false);
+  const [pip, setPip] = useState(playerStartMinimized);
   const [ended, setEnded] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(cur?.seconds || 0);
+  const [videoFitMode, setVideoFitMode] = useState<'fit' | 'fill'>('fit');
+
+  // Continuous auto-play next countdown
+  const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
+  const [cancelledAutoPlay, setCancelledAutoPlay] = useState(false);
+  const autoPlayTimer = useRef<any>(null);
 
   const [quality, setQuality] = useState(() => {
     try { return localStorage.getItem('qf_player_quality') || 'auto'; } catch { return 'auto'; }
   });
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
+
+  const hasPrev = playerQueueIdx > 0;
+  const hasNext = playerQueueIdx < playerQueue.length - 1;
+
+  // Adapt pip when playerStartMinimized changes
+  useEffect(() => {
+    if (playerStartMinimized) setPip(true);
+  }, [playerStartMinimized]);
+
+  // Sync position and duration dynamically when video or server progress changes
+  useEffect(() => {
+    if (!cur) return;
+    const pr = prog.v[cur.id];
+    const initialDur = cur.seconds || (pr && pr.d) || 0;
+    const initialPos = (pr && !pr.done && pr.p > 0) ? Math.floor(pr.p) : 0;
+    if (initialDur > 0 && (!totalDuration || totalDuration === 0)) {
+      setTotalDuration(initialDur);
+    }
+    if (initialPos > 0 && currentTime === 0 && !playing && !isScrubbingRef.current) {
+      setCurrentTime(initialPos);
+    }
+  }, [cur?.id, progV, playing]);
 
   const selectQuality = (qId: string) => {
     setQuality(qId);
@@ -162,33 +197,31 @@ export function PlayerModal() {
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
   };
 
+  const toggleWatched = () => {
+    if (!cur) return;
+    const progStore = useStore.getState().prog;
+    const v = progStore.v[cur.id] || (progStore.v[cur.id] = { p: 0, d: 0, done: 0, w: 0, t: 0 });
+    const nextDone = v.done ? 0 : 1;
+    v.done = nextDone;
+    v.t = Date.now();
+    useStore.getState().commitProg();
+    useStore.getState().toast(nextDone ? 'Marked as completed' : 'Marked as uncompleted');
+  };
+
   const handleShare = async () => {
     if (!cur) return;
     const url = `https://youtu.be/${cur.id}`;
     if (navigator.share) {
-      try { await navigator.share({ title: cur.title, text: cur.title, url }); return; } catch {}
+      try {
+        await navigator.share({ title: cur.title, text: `Watch "${cur.title}" on Quiet Feed`, url });
+        return;
+      } catch {}
     }
     try {
       await navigator.clipboard.writeText(url);
-      useStore.getState().toast('Link copied to clipboard!');
+      useStore.getState().toast('Video link copied to clipboard');
     } catch {
       useStore.getState().toast(url);
-    }
-  };
-
-  const toggleWatched = () => {
-    if (!cur) return;
-    const p = useStore.getState().prog;
-    const d = isDone(p, cur.id);
-    if (d) {
-      const vRec = p.v[cur.id];
-      if (vRec) vRec.done = 0;
-      useStore.getState().commitProg();
-      useStore.getState().toast('Marked unwatched');
-    } else {
-      markDone(p, cur.id, totalDuration || cur.seconds);
-      useStore.getState().commitProg();
-      useStore.getState().toast('Marked watched');
     }
   };
 
@@ -279,6 +312,12 @@ export function PlayerModal() {
     });
     navigator.mediaSession.setActionHandler('seekbackward', () => seekOffset(-10));
     navigator.mediaSession.setActionHandler('seekforward', () => seekOffset(10));
+    if (hasNext) {
+      navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+    }
+    if (hasPrev) {
+      navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
+    }
 
     return () => {
       try {
@@ -286,20 +325,19 @@ export function PlayerModal() {
         navigator.mediaSession.setActionHandler('pause', null);
         navigator.mediaSession.setActionHandler('seekbackward', null);
         navigator.mediaSession.setActionHandler('seekforward', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
       } catch {}
     };
-  }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration]);
+  }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration, hasNext, hasPrev]);
 
   // ── Visibility-change: spoof + auto-resume ──
-  // Same trick as the mobile app's injected JS — when the page goes to
-  // background we try to resume playback since the user didn't pause.
   useEffect(() => {
     if (!cur) return;
     const onVis = () => {
       if (document.visibilityState === 'hidden') {
         if (!userPausedRef.current) scheduleAutoResume();
       } else {
-        // Page came back — if user hadn't paused, ensure we're playing
         if (!userPausedRef.current && playerRef.current) {
           try {
             const S = window.YT?.PlayerState;
@@ -320,7 +358,7 @@ export function PlayerModal() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      if (e.key === 'Escape') { close(); return; }
+      if (e.key === 'Escape') { setPip(true); return; }
       const p = playerRef.current;
       if (!p) return;
       try {
@@ -330,12 +368,14 @@ export function PlayerModal() {
           case 'ArrowLeft': e.preventDefault(); seekOffset(-10); break;
           case 'f': e.preventDefault(); toggleFullscreen(); break;
           case 'm': p.isMuted?.() ? p.unMute() : p.mute(); break;
+          case 'n': if (hasNext) playNext(); break;
+          case 'p': if (hasPrev) playPrev(); break;
         }
       } catch {}
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [cur, close, totalDuration]);
+  }, [cur, close, totalDuration, hasNext, hasPrev]);
 
   // ── Fetch video description ──
   useEffect(() => {
@@ -346,24 +386,37 @@ export function PlayerModal() {
     return () => { cancelled = true; };
   }, [cur?.id]);
 
+  // ── Auto-play cancellation & next trigger ──
+  const handleCancelAutoPlay = () => {
+    if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+    autoPlayTimer.current = null;
+    setAutoPlayCountdown(null);
+    setCancelledAutoPlay(true);
+  };
+
+  const handlePlayNextNow = () => {
+    if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+    autoPlayTimer.current = null;
+    setAutoPlayCountdown(null);
+    playNext();
+  };
+
   // ── YouTube player creation ──
-  // KEY: controls:0, fs:0, disablekb:1 — no YouTube UI at all.
-  // The iframe is wrapped in a pointerEvents:none container so the user
-  // can never click through to YouTube (mirroring mobile's approach).
   useEffect(() => {
     setErrMsg(null);
     setVideoOff(true);
     setPlaying(false);
     setEnded(false);
+    setAutoPlayCountdown(null);
+    setCancelledAutoPlay(false);
     setCurrentTime(0);
-    setPip(false);
     userPausedRef.current = false;
     tcRef.current = 0;
     if (!cur || isFile) return;
 
     const progStore = useStore.getState().prog;
     const pr = progStore.v[cur.id];
-    const startAt = (pr && !pr.done && pr.p > 10 && (!pr.d || pr.p < pr.d * 0.95)) ? Math.floor(pr.p) : 0;
+    const startAt = (pr && !pr.done && pr.p > 2 && (!pr.d || pr.p < pr.d * 0.95)) ? Math.floor(pr.p) : 0;
     let cancelled = false;
     const host = document.createElement('div');
     frameRef.current?.appendChild(host);
@@ -380,11 +433,10 @@ export function PlayerModal() {
           start: startAt,
           iv_load_policy: 3,
           origin: location.origin,
-          // ── Disable ALL YouTube UI — mirror the mobile app ──
-          controls: 0,       // hide YouTube's controls bar
-          fs: 0,             // disable YouTube's fullscreen button
-          disablekb: 1,      // disable YouTube keyboard shortcuts (we have our own)
-          cc_load_policy: 0, // disable auto-loaded captions/subtitles
+          controls: 0,
+          fs: 0,
+          disablekb: 1,
+          cc_load_policy: 0,
         },
         events: {
           onReady: () => {
@@ -404,15 +456,26 @@ export function PlayerModal() {
             if (e.data === S.PLAYING) {
               userPausedRef.current = false;
               clearTimeout(autoResumeTimerRef.current);
+              setAutoPlayCountdown(null);
               startTick();
               setPlaying(true);
               setEnded(false);
               bgPlay();
+
+              // Auto-seek if starting from 0 and resume point exists
+              const prCurrent = useStore.getState().prog.v[cur.id];
+              if (prCurrent && prCurrent.p > 2 && (!prCurrent.done || prCurrent.p < (prCurrent.d || 9999) * 0.95)) {
+                try {
+                  const t = playerRef.current?.getCurrentTime() || 0;
+                  if (t < 2 && prCurrent.p > 5) {
+                    playerRef.current?.seekTo(Math.floor(prCurrent.p), true);
+                  }
+                } catch {}
+              }
             } else if (e.data === S.PAUSED) {
               stopTick();
               setPlaying(false);
               if (!userPausedRef.current) {
-                // YouTube auto-paused (background detection). Fight it.
                 scheduleAutoResume();
               } else {
                 bgPause();
@@ -428,6 +491,28 @@ export function PlayerModal() {
                 try { dur = playerRef.current.getDuration(); } catch {}
                 markDone(useStore.getState().prog, v, dur || v.seconds);
                 useStore.getState().commitProg();
+              }
+
+              // Continuous auto-play next countdown
+              const currentQueue = useStore.getState().playerQueue;
+              const currentIdx = useStore.getState().playerQueueIdx;
+              const canPlayNext = currentIdx >= 0 && currentIdx < currentQueue.length - 1;
+
+              if (canPlayNext && !cancelledAutoPlay) {
+                let count = 3;
+                setAutoPlayCountdown(count);
+                if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+                autoPlayTimer.current = setInterval(() => {
+                  count -= 1;
+                  if (count <= 0) {
+                    if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+                    autoPlayTimer.current = null;
+                    setAutoPlayCountdown(null);
+                    useStore.getState().playNext();
+                  } else {
+                    setAutoPlayCountdown(count);
+                  }
+                }, 1000);
               }
             } else {
               stopTick();
@@ -458,6 +543,10 @@ export function PlayerModal() {
     return () => {
       cancelled = true;
       clearTimeout(autoResumeTimerRef.current);
+      if (autoPlayTimer.current) {
+        clearInterval(autoPlayTimer.current);
+        autoPlayTimer.current = null;
+      }
       stopTick();
       bgDestroy();
       if (playerRef.current) { try { playerRef.current.destroy(); } catch {} playerRef.current = null; }
@@ -466,31 +555,36 @@ export function PlayerModal() {
   }, [cur?.id]);
 
   const replay = () => {
+    if (autoPlayTimer.current) {
+      clearInterval(autoPlayTimer.current);
+      autoPlayTimer.current = null;
+    }
+    setAutoPlayCountdown(null);
     userPausedRef.current = false;
     const p = playerRef.current;
     if (p) { try { p.seekTo(0, true); p.playVideo(); } catch {} }
     setEnded(false);
+    setPlaying(true);
   };
 
-  const displayTime = isScrubbing ? scrubTime : currentTime;
-  const progPct = totalDuration > 0 ? Math.min(100, (displayTime / totalDuration) * 100) : 0;
-  const done = isDone(prog, cur?.id || '');
-
-  // ──────────────────────────────────────────────────────────────
-  // LAYOUT: The iframe (frameRef) is ALWAYS mounted. In pip mode
-  // it collapses to height:0 but stays in the DOM (audio alive).
-  //
-  // The frameRef container has pointerEvents:none — identical to
-  // the mobile app — so the user can NEVER click through to
-  // YouTube links, watermarks, or external pages. All interaction
-  // goes through our own overlay controls.
-  // ──────────────────────────────────────────────────────────────
+  const vRecord = cur ? prog.v[cur.id] : undefined;
+  const effectiveDuration = totalDuration || (vRecord && vRecord.d) || cur?.seconds || 0;
+  const effectiveTime = isScrubbing ? scrubTime : (currentTime > 0 ? currentTime : (vRecord && !vRecord.done ? vRecord.p : 0));
+  const done = cur ? isDone(prog, cur.id) : false;
+  const progPct = effectiveDuration > 0 ? Math.min(100, (effectiveTime / effectiveDuration) * 100) : (done ? 100 : 0);
+  const displayTime = isScrubbing ? scrubTime : (currentTime > 0 ? currentTime : (vRecord ? vRecord.p : 0));
 
   return createPortal(
     <AnimatePresence>
       {cur && !pip && (
-        <motion.div key="qf-bd" className="qf-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          onClick={() => setPip(true)} />
+        <motion.div
+          key="qf-bd"
+          className="qf-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => setPip(true)}
+        />
       )}
 
       {cur && (
@@ -502,20 +596,14 @@ export function PlayerModal() {
           exit={{ opacity: 0, scale: 0.98, y: 18 }}
           transition={{ type: 'spring', stiffness: 320, damping: 30 }}
         >
-
-          {/* ━━━ IFRAME — ALWAYS MOUNTED, POINTER-EVENTS BLOCKED ━━━
-              pointerEvents:none on the frameRef means the user can never
-              interact with YouTube's embedded UI (no links, no logo, no
-              watermark). Exactly like the mobile app's approach. */}
+          {/* ━━━ IFRAME CONTAINER (pointerEvents blocked to suppress YouTube UI) ━━━ */}
           <div
-            className="frame"
+            className={`frame ${videoFitMode === 'fill' ? 'fit-fill' : 'fit-contain'}`}
             style={pip ? { height: 0, minHeight: 0, overflow: 'hidden', border: 'none' } : undefined}
           >
             <div ref={frameRef} style={{ width: '100%', height: '100%', pointerEvents: 'none' }} />
 
-            {/* Tap overlay — captures all taps on the video area.
-                Audio-only mode: shows AudioViz.
-                Video mode: transparent overlay that toggles play/pause on tap. */}
+            {/* Tap overlay: Audio-only vs Video Tap Overlay */}
             {!isFile && !errMsg && (
               <>
                 {/* AUDIO-ONLY COVER */}
@@ -529,8 +617,7 @@ export function PlayerModal() {
                   <AudioViz playing={playing} title={cur.title} channel={cur.channelTitle} />
                 </div>
 
-                {/* VIDEO-VISIBLE TAP OVERLAY — transparent, blocks YouTube clicks,
-                    shows play icon when paused */}
+                {/* VIDEO-VISIBLE TAP OVERLAY */}
                 {!videoOff && (
                   <div
                     className="video-tap-overlay"
@@ -538,7 +625,7 @@ export function PlayerModal() {
                     role="button"
                     aria-label={playing ? 'Pause' : 'Play'}
                   >
-                    {!playing && !ended && (
+                    {!playing && !ended && autoPlayCountdown === null && (
                       <div className="video-tap-play-icon">
                         <IPlay style={{ width: 36, height: 36, marginLeft: 4 }} />
                       </div>
@@ -575,13 +662,27 @@ export function PlayerModal() {
                   </div>
                 )}
 
-                {/* ENDED OVERLAY */}
-                {ended && (
+                {/* ENDED / AUTO-PLAY COUNTDOWN OVERLAY */}
+                {ended && autoPlayCountdown !== null && (
+                  <div className="endcover ap-countdown-box">
+                    <div className="ap-label">Continuous Playback</div>
+                    <div className="ap-next-num">Next video in {autoPlayCountdown}s…</div>
+                    <div className="ap-next-title">{playerQueue[playerQueueIdx + 1]?.title || 'Next video'}</div>
+                    <div className="ap-actions">
+                      <button className="btn primary" onClick={handlePlayNextNow}><IPlay />Play Now</button>
+                      <button className="btn" onClick={handleCancelAutoPlay}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ENDED OVERLAY (When auto-play not queued or cancelled) */}
+                {ended && autoPlayCountdown === null && (
                   <div className="endcover">
                     <div className="end-title">Finished</div>
                     <div className="end-actions">
-                      <button className="btn primary" onClick={replay}><IPlay />Replay</button>
-                      <button className="btn" onClick={close}>Back to feed</button>
+                      <button className="btn primary" onClick={replay}><IRefresh />Replay</button>
+                      {hasNext && <button className="btn" onClick={playNext}>Next Video ↗</button>}
+                      <button className="btn" onClick={() => setPip(true)}>Minimize</button>
                     </div>
                   </div>
                 )}
@@ -602,44 +703,75 @@ export function PlayerModal() {
               </div>
             ) : null}
           </div>
-          {/* ━━━ END IFRAME ━━━ */}
-
 
           {/* ━━━ MINI-PLAYER BAR (pip mode) ━━━ */}
-          {/* ━━━ MINI-PLAYER BAR (pip mode - ONLY PLAY/PAUSE) ━━━ */}
           {pip && (
             <div className="mini-player-bar" onClick={() => setPip(false)}>
               <div className="mini-prog-track">
                 <div className="mini-prog-fill" style={{ width: `${progPct}%` }} />
               </div>
               <div className="mini-inner">
+                <img
+                  className="mini-thumb"
+                  src={cur.thumb}
+                  alt=""
+                  onError={e => {
+                    const t = e.target as HTMLImageElement;
+                    if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                  }}
+                />
                 <div className="mini-meta">
                   <div className="mini-title">{cur.title}</div>
                   <div className="mini-sub">{cur.channelTitle}</div>
                 </div>
-                <button className="mini-btn-play" onClick={e => { e.stopPropagation(); togglePlay(); }} title={playing ? 'Pause' : 'Play'}>
-                  {playing ? <IPause /> : <IPlay style={{ marginLeft: 2 }} />}
-                </button>
+                <div className="mini-actions" onClick={e => e.stopPropagation()}>
+                  {hasPrev && (
+                    <button className="mini-btn-icon" onClick={playPrev} title="Previous Video">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} style={{ width: 18, height: 18 }}>
+                        <polygon points="19 20 9 12 19 4 19 20" /><line x1="5" y1="19" x2="5" y2="5" />
+                      </svg>
+                    </button>
+                  )}
+                  <button className="mini-btn-play" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
+                    {playing ? <IPause /> : <IPlay style={{ marginLeft: 2 }} />}
+                  </button>
+                  {hasNext && (
+                    <button className="mini-btn-icon" onClick={playNext} title="Next Video">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} style={{ width: 18, height: 18 }}>
+                        <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
+                      </svg>
+                    </button>
+                  )}
+                  <button className="mini-btn-icon" onClick={close} title="Close">
+                    <IClose />
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
-
           {/* ━━━ FULL PLAYER CONTROLS (modal mode - 2 BEAUTIFUL ROWS) ━━━ */}
           {!pip && (
             <>
+              {/* TOP HEADER BAR */}
               <div className="qf-modal-top">
                 <button className="qf-top-btn" onClick={() => setPip(true)} title="Minimize player">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" style={{ width: 22, height: 22 }}>
                     <path d="M6 9l6 6 6-6" />
                   </svg>
                 </button>
-                <span className="qf-top-label">Now Playing</span>
+                <div className="qf-top-center">
+                  <span className="qf-top-label">Now Playing</span>
+                  {playerQueue.length > 1 && (
+                    <span className="qf-top-queue-count">{playerQueueIdx + 1} of {playerQueue.length}</span>
+                  )}
+                </div>
                 <button className="qf-top-btn" onClick={close} title="Close player">
                   <IClose />
                 </button>
               </div>
 
+              {/* PROGRESS BAR & SEEK CONTROLLER */}
               <div className="player-progress-wrap">
                 <div
                   className={`player-seek-touch ${isScrubbing ? 'is-scrubbing' : ''}`}
@@ -657,59 +789,81 @@ export function PlayerModal() {
                   <span style={isScrubbing ? { color: 'var(--accent)', fontWeight: 700 } : undefined}>
                     {fmtDur(Math.floor(displayTime)) || '0:00'}
                   </span>
-                  <span>{fmtDur(Math.floor(totalDuration)) || '--:--'}</span>
+                  <span>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</span>
                 </div>
               </div>
 
               {/* 2-ROW CONTROLS CARD */}
               <div className="player-controls-card">
-                {/* ROW 1: PRIMARY PLAYBACK */}
+                {/* ROW 1: PRIMARY PLAYBACK CONTROLS */}
                 <div className="player-playback-row">
-                  <button className="ctrl-action-primary" onClick={replay} title="Restart">
-                    <IRefresh style={{ width: 18, height: 18 }} />
-                    <span>Restart</span>
-                  </button>
+                  {hasPrev ? (
+                    <button className="ctrl-action-primary" onClick={playPrev} title="Previous Video">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} style={{ width: 20, height: 20 }}>
+                        <polygon points="19 20 9 12 19 4 19 20" /><line x1="5" y1="19" x2="5" y2="5" />
+                      </svg>
+                      <span>Prev</span>
+                    </button>
+                  ) : (
+                    <button className="ctrl-action-primary" onClick={replay} title="Restart">
+                      <IRefresh style={{ width: 18, height: 18 }} />
+                      <span>Restart</span>
+                    </button>
+                  )}
+
                   <button className="ctrl-action-primary" onClick={() => seekOffset(-10)} title="-10 seconds">
                     <span style={{ fontSize: '15px', fontWeight: '800' }}>‹ 10</span>
                     <span>-10s</span>
                   </button>
+
                   <button className="ctrl-play-orb" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
                     {playing ? <IPause style={{ width: 24, height: 24 }} /> : <IPlay style={{ width: 24, height: 24, marginLeft: 2 }} />}
                   </button>
+
                   <button className="ctrl-action-primary" onClick={() => seekOffset(10)} title="+10 seconds">
                     <span style={{ fontSize: '15px', fontWeight: '800' }}>10 ›</span>
                     <span>+10s</span>
                   </button>
 
-                  <div style={{ position: 'relative' }}>
-                    <button className="ctrl-action-primary" onClick={() => setQualityMenuOpen(o => !o)} title="Playback Quality">
-                      <IGear style={{ width: 18, height: 18, color: 'var(--accent)' }} />
-                      <span style={{ color: 'var(--accent)', fontWeight: '700' }}>
-                        {quality === 'auto' ? 'Auto' : quality.replace('hd', '')}
-                      </span>
+                  {hasNext ? (
+                    <button className="ctrl-action-primary" onClick={playNext} title="Next Video">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} style={{ width: 20, height: 20 }}>
+                        <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
+                      </svg>
+                      <span>Next</span>
                     </button>
-                    {qualityMenuOpen && (
-                      <div className="quality-dropdown-menu">
-                        <div className="qdm-title">Resolution</div>
-                        {QUALITY_OPTIONS.map(opt => (
-                          <button key={opt.id} className={`qdm-item ${quality === opt.id ? 'active' : ''}`} onClick={() => selectQuality(opt.id)}>
-                            <span>{opt.label}</span>
-                            {quality === opt.id && <ICheck style={{ width: 14, height: 14, color: 'var(--accent)' }} />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  ) : (
+                    <div style={{ position: 'relative' }}>
+                      <button className="ctrl-action-primary" onClick={() => setQualityMenuOpen(o => !o)} title="Playback Quality">
+                        <IGear style={{ width: 18, height: 18, color: 'var(--accent)' }} />
+                        <span style={{ color: 'var(--accent)', fontWeight: '700' }}>
+                          {quality === 'auto' ? 'Auto' : quality.replace('hd', '')}
+                        </span>
+                      </button>
+                      {qualityMenuOpen && (
+                        <div className="quality-dropdown-menu">
+                          <div className="qdm-title">Resolution</div>
+                          {QUALITY_OPTIONS.map(opt => (
+                            <button key={opt.id} className={`qdm-item ${quality === opt.id ? 'active' : ''}`} onClick={() => selectQuality(opt.id)}>
+                              <span>{opt.label}</span>
+                              {quality === opt.id && <ICheck style={{ width: 14, height: 14, color: 'var(--accent)' }} />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="player-controls-divider" />
 
-                {/* ROW 2: UTILITY ACTIONS */}
+                {/* ROW 2: UTILITY ACTIONS (EQUAL 4-COLUMN FLEX GRID) */}
                 <div className="player-utility-row">
                   <button className="ctrl-btn-util" onClick={toggleFullscreen} title="Fullscreen">
                     <IExpand style={{ width: 16, height: 16 }} />
                     <span>Fullscreen</span>
                   </button>
+
                   <button
                     className={`ctrl-btn-util ${captionsOn ? 'done-active' : ''}`}
                     onClick={toggleCaptions}
@@ -723,12 +877,14 @@ export function PlayerModal() {
                       {captionsOn ? 'CC On' : 'CC Off'}
                     </span>
                   </button>
+
                   <button className="ctrl-btn-util" onClick={handleShare} title="Share video">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 16, height: 16 }}>
                       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" />
                     </svg>
                     <span>Share</span>
                   </button>
+
                   <button className={`ctrl-btn-util ${done ? 'done-active' : ''}`} onClick={toggleWatched} title="Toggle watched">
                     <ICheck style={{ width: 16, height: 16, color: done ? 'var(--good)' : 'var(--ink-soft)' }} />
                     <span style={{ color: done ? 'var(--good)' : 'inherit' }}>Done</span>
@@ -736,6 +892,7 @@ export function PlayerModal() {
                 </div>
               </div>
 
+              {/* VIDEO INFO CARD */}
               <div className="info">
                 <div>
                   <h3>{cur.title}</h3>
@@ -745,6 +902,7 @@ export function PlayerModal() {
                 </div>
               </div>
 
+              {/* DESCRIPTION ACCORDION */}
               {desc.trim() && (
                 <div className="pdesc">
                   <button className="pdesc-toggle" onClick={() => setDescOpen(o => !o)}>
@@ -755,7 +913,6 @@ export function PlayerModal() {
               )}
             </>
           )}
-
         </motion.div>
       )}
     </AnimatePresence>,

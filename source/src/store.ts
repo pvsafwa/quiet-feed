@@ -4,7 +4,7 @@ import { api, ApiError, type ApiUser } from './lib/api';
 import { normProg, emptyProg, registerPlaylist } from './lib/progress';
 
 // Only UI preferences live in the browser now; channels + progress live on the server.
-const LS = { prefs: 'qf_prefs', visit: 'qf_lastvisit', userChans: 'qf_user_selected_channels' };
+const LS = { prefs: 'qf_prefs', visit: 'qf_lastvisit', userChans: 'qf_user_selected_channels', lastPlayed: 'qf_last_played_video' };
 function loadJSON<T>(k: string, d: T): T { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v ?? d; } catch { return d; } }
 
 interface Prefs { hideShorts: boolean; autoRefreshMins: number }
@@ -23,6 +23,12 @@ function debouncedSaveProg(prog: Prog) {
 }
 function savePrefs(s: { hideShorts: boolean; autoRefreshMins: number }) {
   try { localStorage.setItem(LS.prefs, JSON.stringify({ hideShorts: s.hideShorts, autoRefreshMins: s.autoRefreshMins })); } catch { /* ignore */ }
+}
+function saveLastPlayed(v: Video | null, queue: Video[] = [], idx = 0) {
+  if (!v) return;
+  try {
+    localStorage.setItem(LS.lastPlayed, JSON.stringify({ video: v, queue, idx }));
+  } catch { /* ignore */ }
 }
 
 interface VidState { buffers: Record<string, Video[]>; cursors: Record<string, Cursor>; loaded: boolean }
@@ -50,6 +56,9 @@ export interface Store {
   prog: Prog;
   progV: number;
   cur: Video | null;
+  playerQueue: Video[];
+  playerQueueIdx: number;
+  playerStartMinimized: boolean;
   panelOpen: boolean;
   banner: string | null;
   toastMsg: { msg: string; err: boolean; id: number } | null;
@@ -85,8 +94,10 @@ export interface Store {
   closePlaylist(): void;
   toggleMonitor(p: { id: string; title: string; channelTitle: string; channelId?: string; count: number }): Promise<void>;
   markAllWatched(vids: Video[]): void;
-  openPlayer(v: Video): void;
+  openPlayer(v: Video, queue?: Video[]): void;
   closePlayer(): void;
+  playNext(): void;
+  playPrev(): void;
   resetProg(): void;
 
   fetchAdminDashboardData(): Promise<AdminUserData[]>;
@@ -117,12 +128,29 @@ export const useStore = create<Store>((set, get) => ({
   prog: emptyProg(),
   progV: 0,
   cur: null,
+  playerQueue: [],
+  playerQueueIdx: 0,
+  playerStartMinimized: false,
   panelOpen: false,
   banner: null,
   toastMsg: null,
 
   init() {
     try { localStorage.setItem(LS.visit, String(Date.now())); } catch { /* ignore */ }
+    try {
+      const raw = localStorage.getItem(LS.lastPlayed);
+      if (raw) {
+        const lastPlayed = JSON.parse(raw);
+        if (lastPlayed && lastPlayed.video && lastPlayed.video.id) {
+          set({
+            cur: lastPlayed.video,
+            playerQueue: lastPlayed.queue || [lastPlayed.video],
+            playerQueueIdx: lastPlayed.idx || 0,
+            playerStartMinimized: true,
+          });
+        }
+      }
+    } catch { /* ignore */ }
     get().loadAuth();
   },
 
@@ -165,6 +193,9 @@ export const useStore = create<Store>((set, get) => ({
       banner: null,
       panelOpen: false,
       cur: null,
+      playerQueue: [],
+      playerQueueIdx: 0,
+      playerStartMinimized: false,
     });
     get().toast('Signed out');
   },
@@ -173,7 +204,31 @@ export const useStore = create<Store>((set, get) => ({
     await get().loadChannels();
     try {
       const { progress } = await api.getProgress();
-      set({ prog: normProg(progress), progV: get().progV + 1 });
+      const norm = normProg(progress);
+      set({ prog: norm, progV: get().progV + 1 });
+
+      // If no cur video yet, check if there is a recently watched video in progress
+      if (!get().cur) {
+        const vEntries = Object.entries(norm.v || {});
+        if (vEntries.length > 0) {
+          vEntries.sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
+          const [vidId, vProg] = vEntries[0];
+          if (vProg && (vProg.title || vidId)) {
+            const restoredVideo: Video = {
+              id: vidId,
+              title: vProg.title || 'Watched Video',
+              channelId: '',
+              channelTitle: vProg.channelTitle || '',
+              channelThumb: '',
+              published: '',
+              thumb: vProg.thumb || `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg`,
+              seconds: vProg.d || 0,
+            };
+            set({ cur: restoredVideo, playerQueue: [restoredVideo], playerQueueIdx: 0, playerStartMinimized: true });
+            saveLastPlayed(restoredVideo, [restoredVideo], 0);
+          }
+        }
+      }
     } catch (e) {
       console.warn('progress load failed', e);
     }
@@ -454,8 +509,40 @@ export const useStore = create<Store>((set, get) => ({
     get().toast(`Marked ${vids.length} video${vids.length === 1 ? '' : 's'} watched`);
   },
 
-  openPlayer(v: Video) { set({ cur: v }); },
-  closePlayer() { set({ cur: null }); get().commitProg(); },
+  openPlayer(v: Video, queue?: Video[]) {
+    const q = queue || [v];
+    const idx = q.findIndex(item => item.id === v.id);
+    const queueIdx = idx >= 0 ? idx : 0;
+    set({ cur: v, playerQueue: q, playerQueueIdx: queueIdx, playerStartMinimized: false });
+    saveLastPlayed(v, q, queueIdx);
+  },
+
+  playNext() {
+    const s = get();
+    const q = s.playerQueue;
+    const nextIdx = s.playerQueueIdx + 1;
+    if (nextIdx < q.length) {
+      const nextVideo = q[nextIdx];
+      set({ cur: nextVideo, playerQueueIdx: nextIdx, playerStartMinimized: false });
+      saveLastPlayed(nextVideo, q, nextIdx);
+    }
+  },
+
+  playPrev() {
+    const s = get();
+    const q = s.playerQueue;
+    const prevIdx = s.playerQueueIdx - 1;
+    if (prevIdx >= 0) {
+      const prevVideo = q[prevIdx];
+      set({ cur: prevVideo, playerQueueIdx: prevIdx, playerStartMinimized: false });
+      saveLastPlayed(prevVideo, q, prevIdx);
+    }
+  },
+
+  closePlayer() {
+    set({ cur: null, playerStartMinimized: false });
+    get().commitProg();
+  },
 
   resetProg() {
     set({ prog: emptyProg(), progV: get().progV + 1, plDur: {} });
@@ -547,11 +634,13 @@ export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
   const buffers = s?.vid?.buffers || {};
   Object.values(buffers).forEach((list) => list.forEach((v) => map.set(v.id, v)));
   (s?.selVideos || []).forEach((v) => map.set(v.id, v));
+  if (s?.cur) map.set(s.cur.id, s.cur);
+  (s?.playerQueue || []).forEach(v => map.set(v.id, v));
 
   const history: Video[] = [];
   const progV = s?.prog?.v || {};
 
-  const entries = Object.entries(progV).filter(([_, p]) => p && (p.p > 0 || p.done || p.w > 0));
+  const entries = Object.entries(progV).filter(([_, p]) => p && (p.p > 0 || p.done || (p.w && p.w > 0)));
   entries.sort((a, b) => (b[1]?.t || 0) - (a[1]?.t || 0));
 
   for (const [id, p] of entries) {

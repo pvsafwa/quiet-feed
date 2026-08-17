@@ -166,7 +166,7 @@ export function ProgressTab() {
                   <motion.article
                     className="card"
                     key={v.id}
-                    onClick={() => openPlayer(v)}
+                    onClick={() => openPlayer(v, historyList)}
                     whileHover={{ y: -3 }}
                     style={{ cursor: 'pointer' }}
                   >
