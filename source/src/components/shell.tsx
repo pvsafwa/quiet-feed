@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useShallow } from 'zustand/react/shallow';
 import { useStore, userActiveChannels } from '../store';
 import { IRefresh, IGear, IList, IPlay, IChart, IAlert, IMenu, IPlus, IBack, IClose } from './states';
 import type { ChannelLanguage, Channel } from '../lib/types';
@@ -132,7 +131,7 @@ export function Tabs() {
 }
 
 export function Sidebar() {
-  const activeChannels = useStore(useShallow(userActiveChannels));
+  const activeChannels = useStore(userActiveChannels);
   const filter = useStore(s => s.filter);
   const open = useStore(s => s.sidebarOpen);
   const ready = useStore(s => !!s.user && s.channels.length > 0);
@@ -173,7 +172,7 @@ export function Sidebar() {
     if (s.sel) s.closePlaylist();
     if (s.tab === 'stats' || s.tab === 'admin') s.switchTab('videos');
     setFilter(id);
-    if (typeof window !== 'undefined' && window.innerWidth <= 768) toggleSidebar(false);
+    if (typeof window !== 'undefined' && window.innerWidth < 980) toggleSidebar(false);
   };
 
   return (

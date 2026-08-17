@@ -323,8 +323,8 @@
 .sb-add{width:100%;justify-content:center}
 
 /* Dock the drawer beside the content on wide screens; overlay on phones/tablets. */
-@media(min-width:769px){
-  .app.has-nav.nav-open .wrap{margin-left:280px}
+@media(min-width:980px){
+  .app.has-nav.nav-open .wrap{margin-left:300px}
   .app.nav-open .scrim{display:none}
 }
 
@@ -983,22 +983,8 @@ h2 .role{margin-left:8px}
    MOBILE RESPONSIVE BREAKPOINTS (max-width: 768px)
    ========================================================================== */
 @media (max-width: 768px) {
-  /* Tab screen without player */
-  .app.on-tabs .wrap {
-    padding: 0 16px calc(60px + 24px + env(safe-area-inset-bottom, 0px));
-  }
-  /* Tab screen WITH mini player (60px Tab Bar + 60px Mini Player + 36px breathing room) */
-  .app.on-tabs.has-player .wrap {
-    padding: 0 16px calc(60px + 60px + 36px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Stack screen without player */
-  .app.on-stack .wrap {
-    padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px));
-  }
-  /* Stack screen WITH mini player (60px Mini Player + 36px breathing room) */
-  .app.on-stack.has-player .wrap {
-    padding: 0 16px calc(60px + 36px + env(safe-area-inset-bottom, 0px));
+  .wrap {
+    padding: 0 16px calc(75px + env(safe-area-inset-bottom, 0px));
   }
 
   .desktop-tabs-wrapper {
@@ -1007,15 +993,6 @@ h2 .role{margin-left:8px}
 
   .bottom-tab-bar {
     display: flex;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: calc(60px + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: var(--bg-2);
-    border-top: 1px solid var(--line);
-    z-index: 990;
   }
 
   .btn-txt {
@@ -1028,62 +1005,19 @@ h2 .role{margin-left:8px}
     border: none;
   }
 
-  /* Screen-adaptive mini player docking */
   .qf-window.pip {
-    position: fixed;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     left: 0;
     right: 0;
     width: 100%;
-    height: 60px;
-    z-index: 995;
     border-radius: 0;
     border-left: none;
     border-right: none;
-    border-top: 1px solid var(--line);
-    background: var(--bg-2);
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
-    transition: bottom 0.22s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.18s ease, transform 0.18s ease;
-  }
-
-  /* On Tab screens (Videos, Playlists, Progress): flush directly on top of 60px Tab Bar */
-  .qf-window.pip.is-tab-screen {
-    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* On Stack screens (Settings, Admin, Playlist Detail): flush at very bottom of screen */
-  .qf-window.pip.is-stack-screen {
-    bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  /* When Channel Drawer is open: hide mini player completely so drawer is clean */
-  .qf-window.pip.sidebar-is-open {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transform: translateY(20px);
   }
 
   .panel-modal {
     width: 100%;
-    max-width: 100vw;
     border-left: none;
-    border-radius: 0;
-    height: 100vh;
-    max-height: 100vh;
-  }
-
-  /* Settings modal scroll container */
-  .panel-scroll-content {
-    padding: 16px 18px calc(60px + 40px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Admin Dashboard container */
-  .admin-wrap {
-    padding-bottom: calc(60px + 40px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Channel Drawer list */
-  .sb-list {
-    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   }
 }
 

@@ -77,12 +77,8 @@ export default function App() {
   else if (sel) { content = <PlaylistDetail />; routeKey = 'detail-' + sel.id; }
   else { content = <PlaylistsTab />; routeKey = 'playlists'; }
 
-  const cur = useStore(s => s.cur);
-  const panelOpen = useStore(s => s.panelOpen);
-  const isTabScreen = (tab === 'videos' || tab === 'playlists' || tab === 'stats') && !sel && !panelOpen;
-
   return (
-    <div className={`app ${ready ? 'has-nav' : ''} ${ready && sidebarOpen ? 'nav-open' : ''} ${cur ? 'has-player' : ''} ${isTabScreen ? 'on-tabs' : 'on-stack'}`}>
+    <div className={`app ${ready ? 'has-nav' : ''} ${ready && sidebarOpen ? 'nav-open' : ''}`}>
       <Sidebar />
       <div className="scrim" onClick={() => toggleSidebar(false)} />
       <div className="wrap">
