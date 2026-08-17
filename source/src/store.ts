@@ -85,8 +85,10 @@ export interface Store {
   closePlaylist(): void;
   toggleMonitor(p: { id: string; title: string; channelTitle: string; channelId?: string; count: number }): Promise<void>;
   markAllWatched(vids: Video[]): void;
-  openPlayer(v: Video): void;
+  openPlayer(v: Video, queue?: Video[]): void;
   closePlayer(): void;
+  playNext(): boolean;
+  playPrev(): boolean;
   resetProg(): void;
 
   fetchAdminDashboardData(): Promise<AdminUserData[]>;
@@ -117,6 +119,8 @@ export const useStore = create<Store>((set, get) => ({
   prog: emptyProg(),
   progV: 0,
   cur: null,
+  playerQueue: [],
+  playerQueueIdx: -1,
   panelOpen: false,
   banner: null,
   toastMsg: null,
@@ -454,8 +458,30 @@ export const useStore = create<Store>((set, get) => ({
     get().toast(`Marked ${vids.length} video${vids.length === 1 ? '' : 's'} watched`);
   },
 
-  openPlayer(v: Video) { set({ cur: v }); },
-  closePlayer() { set({ cur: null }); get().commitProg(); },
+  openPlayer(v: Video, queue?: Video[]) {
+    const q = queue || [];
+    const idx = q.findIndex(item => item.id === v.id);
+    set({ cur: v, playerQueue: q, playerQueueIdx: idx >= 0 ? idx : 0 });
+  },
+  closePlayer() { set({ cur: null, playerQueue: [], playerQueueIdx: -1 }); get().commitProg(); },
+  playNext() {
+    const { playerQueue, playerQueueIdx } = get();
+    const nextIdx = playerQueueIdx + 1;
+    if (nextIdx < playerQueue.length) {
+      set({ cur: playerQueue[nextIdx], playerQueueIdx: nextIdx });
+      return true;
+    }
+    return false;
+  },
+  playPrev() {
+    const { playerQueue, playerQueueIdx } = get();
+    const prevIdx = playerQueueIdx - 1;
+    if (prevIdx >= 0) {
+      set({ cur: playerQueue[prevIdx], playerQueueIdx: prevIdx });
+      return true;
+    }
+    return false;
+  },
 
   resetProg() {
     set({ prog: emptyProg(), progV: get().progV + 1, plDur: {} });

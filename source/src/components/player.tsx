@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { addWatch, setPos, markDone, isDone } from '../lib/progress';
 import { ago, views as fmtViews, fmtDur } from '../lib/format';
 import { bgPlay, bgPause, bgDestroy } from '../lib/bgaudio';
-import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause, ICheck, IGear, IRefresh } from './states';
+import { IClose, IVideo, IVideoOff, IPip, IExpand, IPlay, IPause, ICheck, IRefresh, INext, IPrev } from './states';
 
 // Decorative equalizer shown when the video is hidden (audio-only mode).
 function AudioViz({ playing, title, channel }: { playing: boolean; title: string; channel: string }) {
@@ -25,23 +25,23 @@ function AudioViz({ playing, title, channel }: { playing: boolean; title: string
   );
 }
 
-const QUALITY_OPTIONS = [
-  { id: 'auto', label: 'Auto (Recommended)', short: 'Auto' },
-  { id: 'hd1080', label: '1080p HD', short: '1080p' },
-  { id: 'hd720', label: '720p HD', short: '720p' },
-  { id: 'large', label: '480p', short: '480p' },
-  { id: 'medium', label: '360p', short: '360p' },
-  { id: 'small', label: '240p', short: '240p' },
-  { id: 'tiny', label: '144p', short: '144p' },
-];
-
 export function PlayerModal() {
   const cur = useStore(s => s.cur);
   const close = useStore(s => s.closePlayer);
   const prog = useStore(s => s.prog);
+  const playerQueue = useStore(s => s.playerQueue);
+  const playerQueueIdx = useStore(s => s.playerQueueIdx);
+  const playNext = useStore(s => s.playNext);
+  const playPrev = useStore(s => s.playPrev);
+
+  const hasNext = playerQueueIdx >= 0 && playerQueueIdx + 1 < playerQueue.length;
+  const hasPrev = playerQueueIdx > 0;
+  const nextVideo = hasNext ? playerQueue[playerQueueIdx + 1] : null;
+
   const frameRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const tickRef = useRef<any>(null);
+  const autoPlayTimer = useRef<any>(null);
   const tcRef = useRef(0);
 
   // Track whether the USER explicitly paused vs YouTube auto-pausing
@@ -59,26 +59,30 @@ export function PlayerModal() {
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(cur?.seconds || 0);
 
-  const [quality, setQuality] = useState(() => {
-    try { return localStorage.getItem('qf_player_quality') || 'auto'; } catch { return 'auto'; }
-  });
-  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  // Auto-play next video countdown
+  const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
+  const [cancelledAutoPlay, setCancelledAutoPlay] = useState(false);
+
   const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
 
-  const selectQuality = (qId: string) => {
-    setQuality(qId);
-    setQualityMenuOpen(false);
-    const p = playerRef.current;
-    if (p) {
-      try {
-        if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(qId);
-        if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(qId, qId);
-      } catch {}
+  // Handle auto-play countdown timer
+  useEffect(() => {
+    if (autoPlayCountdown === null) {
+      if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+      return;
     }
-    try { localStorage.setItem('qf_player_quality', qId); } catch {}
-    const opt = QUALITY_OPTIONS.find(o => o.id === qId);
-    useStore.getState().toast(`Quality: ${opt?.label || qId}`);
-  };
+    if (autoPlayCountdown <= 0) {
+      setAutoPlayCountdown(null);
+      playNext();
+      return;
+    }
+    autoPlayTimer.current = setInterval(() => {
+      setAutoPlayCountdown(prev => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => {
+      if (autoPlayTimer.current) clearInterval(autoPlayTimer.current);
+    };
+  }, [autoPlayCountdown, playNext]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -224,6 +228,16 @@ export function PlayerModal() {
     });
     navigator.mediaSession.setActionHandler('seekbackward', () => seekOffset(-10));
     navigator.mediaSession.setActionHandler('seekforward', () => seekOffset(10));
+    if (hasNext) {
+      navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+    } else {
+      navigator.mediaSession.setActionHandler('nexttrack', null);
+    }
+    if (hasPrev) {
+      navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
+    } else {
+      navigator.mediaSession.setActionHandler('previoustrack', null);
+    }
 
     return () => {
       try {
@@ -231,9 +245,11 @@ export function PlayerModal() {
         navigator.mediaSession.setActionHandler('pause', null);
         navigator.mediaSession.setActionHandler('seekbackward', null);
         navigator.mediaSession.setActionHandler('seekforward', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
       } catch {}
     };
-  }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration]);
+  }, [cur?.id, cur?.title, cur?.channelTitle, totalDuration, hasNext, hasPrev, playNext, playPrev]);
 
   // ── Visibility-change: spoof + auto-resume ──
   // Same trick as the mobile app's injected JS — when the page goes to
@@ -275,12 +291,14 @@ export function PlayerModal() {
           case 'ArrowLeft': e.preventDefault(); seekOffset(-10); break;
           case 'f': e.preventDefault(); toggleFullscreen(); break;
           case 'm': p.isMuted?.() ? p.unMute() : p.mute(); break;
+          case 'n': case 'N': if (hasNext) { e.preventDefault(); playNext(); } break;
+          case 'p': case 'P': if (hasPrev) { e.preventDefault(); playPrev(); } break;
         }
       } catch {}
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [cur, close, totalDuration]);
+  }, [cur, close, totalDuration, hasNext, hasPrev, playNext, playPrev]);
 
   // ── Fetch video description ──
   useEffect(() => {
@@ -302,6 +320,8 @@ export function PlayerModal() {
     setEnded(false);
     setCurrentTime(0);
     setPip(false);
+    setAutoPlayCountdown(null);
+    setCancelledAutoPlay(false);
     userPausedRef.current = false;
     tcRef.current = 0;
     if (!cur || isFile) return;
@@ -331,14 +351,7 @@ export function PlayerModal() {
           disablekb: 1,      // disable YouTube keyboard shortcuts (we have our own)
         },
         events: {
-          onReady: () => {
-            if (quality && quality !== 'auto') {
-              try {
-                playerRef.current?.setPlaybackQuality?.(quality);
-                playerRef.current?.setPlaybackQualityRange?.(quality, quality);
-              } catch {}
-            }
-          },
+          onReady: () => {},
           onStateChange: (e: any) => {
             const S = window.YT.PlayerState;
             if (e.data === S.PLAYING) {
@@ -347,6 +360,7 @@ export function PlayerModal() {
               startTick();
               setPlaying(true);
               setEnded(false);
+              setAutoPlayCountdown(null);
               bgPlay();
             } else if (e.data === S.PAUSED) {
               stopTick();
@@ -368,6 +382,11 @@ export function PlayerModal() {
                 try { dur = playerRef.current.getDuration(); } catch {}
                 markDone(useStore.getState().prog, v.id, dur || v.seconds);
                 useStore.getState().commitProg();
+              }
+              const state = useStore.getState();
+              const hasMore = state.playerQueueIdx >= 0 && state.playerQueueIdx + 1 < state.playerQueue.length;
+              if (hasMore) {
+                setAutoPlayCountdown(4);
               }
             } else {
               stopTick();
@@ -514,14 +533,36 @@ export function PlayerModal() {
                   </div>
                 )}
 
-                {/* ENDED OVERLAY */}
+                {/* ENDED / UP-NEXT OVERLAY */}
                 {ended && (
                   <div className="endcover">
-                    <div className="end-title">Finished</div>
-                    <div className="end-actions">
-                      <button className="btn primary" onClick={replay}><IPlay />Replay</button>
-                      <button className="btn" onClick={close}>Back to feed</button>
-                    </div>
+                    {hasNext && autoPlayCountdown !== null && nextVideo ? (
+                      <div className="up-next-box" style={{ textAlign: 'center', maxWidth: 420, padding: 24 }}>
+                        <div style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent)', fontWeight: 700, marginBottom: 8 }}>
+                          Up Next in {autoPlayCountdown}s
+                        </div>
+                        <div style={{ display: 'flex', gap: 14, alignItems: 'center', background: 'var(--bg-2)', padding: 12, borderRadius: 12, border: '1px solid var(--line)', marginBottom: 16, textAlign: 'left' }}>
+                          <img src={nextVideo.thumb} alt="" style={{ width: 84, height: 48, borderRadius: 6, objectFit: 'cover' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nextVideo.title}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--ink-soft)', marginTop: 2 }}>{nextVideo.channelTitle}</div>
+                          </div>
+                        </div>
+                        <div className="end-actions">
+                          <button className="btn primary" onClick={() => { setAutoPlayCountdown(null); playNext(); }}><IPlay />Play Now</button>
+                          <button className="btn" onClick={() => { setAutoPlayCountdown(null); setCancelledAutoPlay(true); }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="end-title">Finished</div>
+                        <div className="end-actions">
+                          <button className="btn primary" onClick={replay}><IPlay />Replay</button>
+                          {hasNext && <button className="btn" onClick={() => playNext()}><INext />Next</button>}
+                          <button className="btn" onClick={close}>Back to feed</button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </>
@@ -555,6 +596,11 @@ export function PlayerModal() {
                   <div className="mini-title">{cur.title}</div>
                   <div className="mini-sub">{cur.channelTitle}</div>
                 </div>
+                {hasNext && (
+                  <button className="mini-btn" onClick={e => { e.stopPropagation(); playNext(); }} title="Next video">
+                    <INext />
+                  </button>
+                )}
                 <button className="mini-btn" onClick={e => { e.stopPropagation(); togglePlay(); }} title={playing ? 'Pause' : 'Play'}>
                   {playing ? <IPause /> : <IPlay />}
                 </button>
@@ -598,6 +644,9 @@ export function PlayerModal() {
                 <button className="ctrl-action" onClick={replay} title="Restart">
                   <IRefresh /><span>Restart</span>
                 </button>
+                <button className="ctrl-action" disabled={!hasPrev} onClick={playPrev} title="Previous video" style={{ opacity: hasPrev ? 1 : 0.4 }}>
+                  <IPrev /><span>Prev</span>
+                </button>
                 <button className="ctrl-action" onClick={() => seekOffset(-10)} title="-10 seconds">
                   <span style={{ fontSize: '15px', fontWeight: '800' }}>‹ 10</span><span>-10s</span>
                 </button>
@@ -607,26 +656,9 @@ export function PlayerModal() {
                 <button className="ctrl-action" onClick={() => seekOffset(10)} title="+10 seconds">
                   <span style={{ fontSize: '15px', fontWeight: '800' }}>10 ›</span><span>+10s</span>
                 </button>
-
-                <div style={{ position: 'relative' }}>
-                  <button className="ctrl-action" onClick={() => setQualityMenuOpen(o => !o)} title="Playback Quality">
-                    <IGear style={{ width: 19, height: 19, color: 'var(--accent)' }} />
-                    <span style={{ color: 'var(--accent)', fontWeight: '700' }}>
-                      {quality === 'auto' ? 'Auto' : quality.replace('hd', '')}
-                    </span>
-                  </button>
-                  {qualityMenuOpen && (
-                    <div className="quality-dropdown-menu">
-                      <div className="qdm-title">Resolution</div>
-                      {QUALITY_OPTIONS.map(opt => (
-                        <button key={opt.id} className={`qdm-item ${quality === opt.id ? 'active' : ''}`} onClick={() => selectQuality(opt.id)}>
-                          <span>{opt.label}</span>
-                          {quality === opt.id && <ICheck style={{ width: 14, height: 14, color: 'var(--accent)' }} />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button className="ctrl-action" disabled={!hasNext} onClick={playNext} title="Next video" style={{ opacity: hasNext ? 1 : 0.4 }}>
+                  <INext /><span>Next</span>
+                </button>
 
                 <button className="ctrl-action" onClick={toggleFullscreen} title="Fullscreen">
                   <IExpand /><span>Full</span>

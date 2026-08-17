@@ -10,7 +10,7 @@ import { IPlay, ICheck, EmptyState, Skeleton, ITv } from './states';
 const gridV = { hidden: {}, show: { transition: { staggerChildren: 0.035 } } };
 const itemV = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.2, 0.7, 0.3, 1] } } };
 
-export function VideoCard({ v }: { v: Video }) {
+export function VideoCard({ v, queue }: { v: Video; queue?: Video[] }) {
   useStore(s => s.progV); // re-render when progress is committed
   const prog = useStore(s => s.prog);
   const lastSeen = useStore(s => s.lastSeen);
@@ -19,7 +19,7 @@ export function VideoCard({ v }: { v: Video }) {
   const pct = _vpct(prog, v.id);
   const isNew = lastSeen > 0 && new Date(v.published).getTime() > lastSeen;
   return (
-    <motion.article className="card" variants={itemV} onClick={() => openPlayer(v)} whileHover={{ y: -3 }} style={{ cursor: 'pointer' }}>
+    <motion.article className="card" variants={itemV} onClick={() => openPlayer(v, queue)} whileHover={{ y: -3 }} style={{ cursor: 'pointer' }}>
       <div className={`thumb ${done ? 'is-done' : ''}`}>
         <img src={v.thumb} alt="" loading="lazy" onError={(e) => {
           const t = e.target as HTMLImageElement;
@@ -49,7 +49,7 @@ export function VideoCard({ v }: { v: Video }) {
 export function VideoGrid({ videos }: { videos: Video[] }) {
   return (
     <motion.div className="grid" variants={gridV} initial="hidden" animate="show">
-      {videos.map(v => <VideoCard key={v.id} v={v} />)}
+      {videos.map(v => <VideoCard key={v.id} v={v} queue={videos} />)}
     </motion.div>
   );
 }

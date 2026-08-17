@@ -163,7 +163,7 @@ export function ProgressTab() {
                 const done = pr ? isDone(prog, v.id) : false;
                 const pct = pr && pr.d && pr.p ? Math.min(100, Math.round((pr.p / pr.d) * 100)) : 0;
                 return (
-                  <div className="card" key={v.id} onClick={() => openPlayer(v)}>
+                  <div className="card" key={v.id} onClick={() => openPlayer(v, historyList)}>
                     <div className="c-thumb">
                       <img src={v.thumb} alt="" loading="lazy" />
                       {v.seconds ? <span className="dur">{fmtSpan(v.seconds)}</span> : null}

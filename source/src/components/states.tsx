@@ -5,6 +5,8 @@ const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLin
 
 export const IPlay = (p: P) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M8 5v14l11-7z" /></svg>;
 export const IPause = (p: P) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>;
+export const INext = (p: P) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>;
+export const IPrev = (p: P) => <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>;
 export const IList = (p: P) => <svg viewBox="0 0 24 24" {...stroke} {...p}><path d="M3 6h13M3 12h13M3 18h9M17 13l4 2.5-4 2.5z" /></svg>;
 export const IRefresh = (p: P) => <svg viewBox="0 0 24 24" {...stroke} {...p}><path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>;
 export const IGear = (p: P) => <svg viewBox="0 0 24 24" {...stroke} {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>;
