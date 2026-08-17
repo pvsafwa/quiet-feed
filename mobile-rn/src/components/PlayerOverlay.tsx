@@ -674,56 +674,80 @@ function PlayerWindow({ video }: { video: Video }) {
                   </View>
                 </View>
 
-                {/* CONTROLS & ACTION BUTTONS */}
-                <View style={styles.controlsBar}>
-                  {hasPrev ? (
-                    <Pressable style={styles.controlAction} onPress={handlePlayPrev}>
-                      <Ionicons name="play-skip-back" size={20} color={colors.ink} />
-                      <Text style={styles.controlLabel}>Prev</Text>
+                {/* CONTROLS & ACTION BUTTONS (2 BEAUTIFUL ROWS) */}
+                <View style={styles.controlsCard}>
+                  {/* ROW 1: PRIMARY PLAYBACK CONTROLS */}
+                  <View style={styles.playbackRow}>
+                    {hasPrev ? (
+                      <Pressable style={styles.primaryActionBtn} onPress={handlePlayPrev}>
+                        <Ionicons name="play-skip-back" size={22} color={colors.ink} />
+                        <Text style={styles.primaryActionLabel}>Prev</Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
+                        <Ionicons name="refresh" size={22} color={colors.ink} />
+                        <Text style={styles.primaryActionLabel}>Restart</Text>
+                      </Pressable>
+                    )}
+
+                    <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(-10)}>
+                      <Ionicons name="play-back" size={24} color={colors.ink} />
+                      <Text style={styles.primaryActionLabel}>-10s</Text>
                     </Pressable>
-                  ) : (
-                    <Pressable style={styles.controlAction} onPress={handleReplay}>
-                      <Ionicons name="refresh" size={20} color={colors.ink} />
-                      <Text style={styles.controlLabel}>Restart</Text>
+
+                    <Pressable style={styles.playPauseOrb} onPress={() => setWantPlay(!playing)}>
+                      <Ionicons
+                        name={playing ? 'pause' : 'play'}
+                        size={28}
+                        color={colors.onAccent}
+                        style={!playing ? { marginLeft: 3 } : undefined}
+                      />
                     </Pressable>
-                  )}
 
-                  <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(-10)}>
-                    <Ionicons name="play-back" size={20} color={colors.ink} />
-                    <Text style={styles.controlLabel}>-10s</Text>
-                  </Pressable>
-
-                  <Pressable style={styles.playPauseBtn} onPress={() => setWantPlay(!playing)}>
-                    <Ionicons name={playing ? 'pause' : 'play'} size={26} color={colors.onAccent} style={!playing ? { marginLeft: 2 } : undefined} />
-                  </Pressable>
-
-                  <Pressable style={styles.controlAction} onPress={() => handleSeekOffset(10)}>
-                    <Ionicons name="play-forward" size={20} color={colors.ink} />
-                    <Text style={styles.controlLabel}>+10s</Text>
-                  </Pressable>
-
-                  {hasNext && (
-                    <Pressable style={styles.controlAction} onPress={handlePlayNext}>
-                      <Ionicons name="play-skip-forward" size={20} color={colors.accent} />
-                      <Text style={[styles.controlLabel, { color: colors.accent, fontWeight: '700' }]}>Next</Text>
+                    <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(10)}>
+                      <Ionicons name="play-forward" size={24} color={colors.ink} />
+                      <Text style={styles.primaryActionLabel}>+10s</Text>
                     </Pressable>
-                  )}
 
-                  {/* Fullscreen Landscape Toggle */}
-                  <Pressable style={styles.controlAction} onPress={toggleFullscreen}>
-                    <Ionicons name="expand" size={20} color={colors.ink} />
-                    <Text style={styles.controlLabel}>Full</Text>
-                  </Pressable>
+                    {hasNext ? (
+                      <Pressable style={styles.primaryActionBtn} onPress={handlePlayNext}>
+                        <Ionicons name="play-skip-forward" size={22} color={colors.accent} />
+                        <Text style={[styles.primaryActionLabel, { color: colors.accent, fontWeight: '700' }]}>Next</Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
+                        <Ionicons name="refresh" size={22} color={colors.inkSoft} />
+                        <Text style={styles.primaryActionLabel}>Replay</Text>
+                      </Pressable>
+                    )}
+                  </View>
 
-                  <Pressable style={styles.controlAction} onPress={handleShare}>
-                    <Ionicons name="share-social-outline" size={20} color={colors.ink} />
-                    <Text style={styles.controlLabel}>Share</Text>
-                  </Pressable>
+                  {/* DIVIDER BETWEEN ROWS */}
+                  <View style={styles.controlsDivider} />
 
-                  <Pressable style={styles.controlAction} onPress={toggleWatched}>
-                    <Ionicons name={done ? 'checkmark-circle' : 'checkmark-circle-outline'} size={20} color={done ? colors.good : colors.inkSoft} />
-                    <Text style={[styles.controlLabel, done && { color: colors.good }]}>{done ? 'Watched' : 'Done'}</Text>
-                  </Pressable>
+                  {/* ROW 2: SECONDARY UTILITY ACTIONS */}
+                  <View style={styles.utilityRow}>
+                    <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
+                      <Ionicons name="expand-outline" size={17} color={colors.inkSoft} />
+                      <Text style={styles.utilityLabel}>Fullscreen</Text>
+                    </Pressable>
+
+                    <Pressable style={styles.utilityBtn} onPress={handleShare}>
+                      <Ionicons name="share-social-outline" size={17} color={colors.inkSoft} />
+                      <Text style={styles.utilityLabel}>Share</Text>
+                    </Pressable>
+
+                    <Pressable style={[styles.utilityBtn, done && styles.utilityBtnActive]} onPress={toggleWatched}>
+                      <Ionicons
+                        name={done ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                        size={17}
+                        color={done ? colors.good : colors.inkSoft}
+                      />
+                      <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]}>
+                        {done ? 'Watched' : 'Mark Done'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 {/* Video Details Info */}
@@ -749,7 +773,7 @@ function PlayerWindow({ video }: { video: Video }) {
 
           </Animated.View>
 
-          {/* MINIMIZED PLAYER CONTENT */}
+          {/* MINIMIZED PLAYER CONTENT (ONLY SINGLE PLAY/PAUSE BUTTON) */}
           <Animated.View style={[styles.miniPlayer, animatedMiniStyle]}>
             {/* Mini Player Progress Bar */}
             <View style={styles.miniProgBar}>
@@ -764,16 +788,8 @@ function PlayerWindow({ video }: { video: Video }) {
                   <Text style={styles.miniTitle} numberOfLines={1}>{video.title}</Text>
                   <Text style={styles.miniSub} numberOfLines={1}>{video.channelTitle}</Text>
                 </View>
-                {hasNext && (
-                  <Pressable hitSlop={12} onPress={handlePlayNext} style={styles.miniBtn}>
-                    <Ionicons name="play-skip-forward" size={20} color={colors.accent} />
-                  </Pressable>
-                )}
-                <Pressable hitSlop={12} onPress={expand} style={styles.miniBtn}>
-                  <Ionicons name="expand" size={20} color={colors.inkSoft} />
-                </Pressable>
-                <Pressable hitSlop={12} onPress={() => setWantPlay(!playing)} style={styles.miniBtn}>
-                  <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.ink} />
+                <Pressable hitSlop={14} onPress={() => setWantPlay(!playing)} style={styles.miniPlayBtn}>
+                  <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.ink} style={!playing ? { marginLeft: 2 } : undefined} />
                 </Pressable>
               </View>
             </TouchableWithoutFeedback>
@@ -1027,39 +1043,77 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
-  controlsBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    marginHorizontal: 12,
-    marginTop: 6,
+  controlsCard: {
+    marginHorizontal: 14,
+    marginTop: 8,
     backgroundColor: colors.bg2,
-    borderRadius: radius.md,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.line,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  controlAction: {
+  playbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 4,
+  },
+  primaryActionBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    gap: 2,
-    minWidth: 38,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 3,
+    minWidth: 48,
   },
-  controlLabel: {
+  primaryActionLabel: {
     color: colors.inkSoft,
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '600',
   },
-  playPauseBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  playPauseOrb: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  controlsDivider: {
+    height: 1,
+    backgroundColor: colors.line,
+    marginVertical: 8,
+    marginHorizontal: 4,
+  },
+  utilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 2,
+  },
+  utilityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg3,
+  },
+  utilityBtnActive: {
+    backgroundColor: 'rgba(95, 181, 106, 0.15)',
+  },
+  utilityLabel: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   info: { padding: 18 },
@@ -1105,5 +1159,12 @@ const styles = StyleSheet.create({
   miniTextCont: { flex: 1, marginRight: 8 },
   miniTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '600' },
   miniSub: { color: colors.inkSoft, fontSize: 12, marginTop: 1 },
-  miniBtn: { padding: 6, marginHorizontal: 1 },
+  miniPlayBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.bg3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

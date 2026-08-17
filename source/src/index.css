@@ -601,19 +601,26 @@ h2 .role{margin-left:8px}
   text-overflow: ellipsis;
 }
 
-.mini-btn {
-  padding: 6px;
+.mini-btn-play {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--bg-3);
   color: var(--ink);
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  transition: all 0.15s ease;
+  flex: none;
 }
 
-.mini-btn:hover {
-  background: var(--bg-3);
+.mini-btn-play:hover {
+  background: var(--accent);
+  color: #1a140b;
+  border-color: var(--accent);
 }
 
-.mini-btn svg {
+.mini-btn-play svg {
   width: 20px;
   height: 20px;
 }
@@ -724,58 +731,94 @@ h2 .role{margin-left:8px}
   font-variant-numeric: tabular-nums;
 }
 
-/* Player Controls Bar */
-.player-controls-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
+/* Player Controls Card (2-Row Design) */
+.player-controls-card {
   margin: 6px 16px 14px;
   background: var(--bg-2);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.ctrl-action {
+.player-playback-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.ctrl-action-primary {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
   color: var(--ink-soft);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 4px;
-  min-width: 38px;
+  padding: 6px 8px;
+  min-width: 48px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
 }
 
-.ctrl-action svg {
-  width: 20px;
-  height: 20px;
-}
-
-.ctrl-action:hover {
+.ctrl-action-primary:hover {
   color: var(--ink);
-}
-
-.ctrl-action.done-active {
-  color: var(--good);
+  background: var(--bg-3);
 }
 
 .ctrl-play-orb {
-  width: 46px;
-  height: 46px;
-  border-radius: 23px;
+  width: 52px;
+  height: 52px;
+  border-radius: 26px;
   background: var(--accent);
   color: #1a140b;
   display: grid;
   place-items: center;
   box-shadow: 0 4px 14px rgba(232, 161, 77, 0.4);
   transition: transform 0.15s ease;
+  flex: none;
 }
 
 .ctrl-play-orb:hover {
-  transform: scale(1.05);
+  transform: scale(1.06);
+}
+
+.player-controls-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 2px 4px;
+}
+
+.player-utility-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.ctrl-btn-util {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.ctrl-btn-util:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ctrl-btn-util.done-active {
+  background: rgba(95, 181, 106, 0.16);
+  color: var(--good);
 }
 
 /* Quality Dropdown Menu */

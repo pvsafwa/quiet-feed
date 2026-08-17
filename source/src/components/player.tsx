@@ -545,6 +545,7 @@ export function PlayerModal() {
 
 
           {/* ━━━ MINI-PLAYER BAR (pip mode) ━━━ */}
+          {/* ━━━ MINI-PLAYER BAR (pip mode - ONLY PLAY/PAUSE) ━━━ */}
           {pip && (
             <div className="mini-player-bar" onClick={() => setPip(false)}>
               <div className="mini-prog-track">
@@ -555,18 +556,15 @@ export function PlayerModal() {
                   <div className="mini-title">{cur.title}</div>
                   <div className="mini-sub">{cur.channelTitle}</div>
                 </div>
-                <button className="mini-btn" onClick={e => { e.stopPropagation(); togglePlay(); }} title={playing ? 'Pause' : 'Play'}>
-                  {playing ? <IPause /> : <IPlay />}
-                </button>
-                <button className="mini-btn" onClick={e => { e.stopPropagation(); close(); }} title="Close">
-                  <IClose />
+                <button className="mini-btn-play" onClick={e => { e.stopPropagation(); togglePlay(); }} title={playing ? 'Pause' : 'Play'}>
+                  {playing ? <IPause /> : <IPlay style={{ marginLeft: 2 }} />}
                 </button>
               </div>
             </div>
           )}
 
 
-          {/* ━━━ FULL PLAYER CONTROLS (modal mode) ━━━ */}
+          {/* ━━━ FULL PLAYER CONTROLS (modal mode - 2 BEAUTIFUL ROWS) ━━━ */}
           {!pip && (
             <>
               <div className="qf-modal-top">
@@ -594,51 +592,66 @@ export function PlayerModal() {
                 </div>
               </div>
 
-              <div className="player-controls-bar">
-                <button className="ctrl-action" onClick={replay} title="Restart">
-                  <IRefresh /><span>Restart</span>
-                </button>
-                <button className="ctrl-action" onClick={() => seekOffset(-10)} title="-10 seconds">
-                  <span style={{ fontSize: '15px', fontWeight: '800' }}>‹ 10</span><span>-10s</span>
-                </button>
-                <button className="ctrl-play-orb" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
-                  {playing ? <IPause style={{ width: 22, height: 22 }} /> : <IPlay style={{ width: 22, height: 22, marginLeft: 2 }} />}
-                </button>
-                <button className="ctrl-action" onClick={() => seekOffset(10)} title="+10 seconds">
-                  <span style={{ fontSize: '15px', fontWeight: '800' }}>10 ›</span><span>+10s</span>
-                </button>
-
-                <div style={{ position: 'relative' }}>
-                  <button className="ctrl-action" onClick={() => setQualityMenuOpen(o => !o)} title="Playback Quality">
-                    <IGear style={{ width: 19, height: 19, color: 'var(--accent)' }} />
-                    <span style={{ color: 'var(--accent)', fontWeight: '700' }}>
-                      {quality === 'auto' ? 'Auto' : quality.replace('hd', '')}
-                    </span>
+              {/* 2-ROW CONTROLS CARD */}
+              <div className="player-controls-card">
+                {/* ROW 1: PRIMARY PLAYBACK */}
+                <div className="player-playback-row">
+                  <button className="ctrl-action-primary" onClick={replay} title="Restart">
+                    <IRefresh style={{ width: 18, height: 18 }} />
+                    <span>Restart</span>
                   </button>
-                  {qualityMenuOpen && (
-                    <div className="quality-dropdown-menu">
-                      <div className="qdm-title">Resolution</div>
-                      {QUALITY_OPTIONS.map(opt => (
-                        <button key={opt.id} className={`qdm-item ${quality === opt.id ? 'active' : ''}`} onClick={() => selectQuality(opt.id)}>
-                          <span>{opt.label}</span>
-                          {quality === opt.id && <ICheck style={{ width: 14, height: 14, color: 'var(--accent)' }} />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <button className="ctrl-action-primary" onClick={() => seekOffset(-10)} title="-10 seconds">
+                    <span style={{ fontSize: '15px', fontWeight: '800' }}>‹ 10</span>
+                    <span>-10s</span>
+                  </button>
+                  <button className="ctrl-play-orb" onClick={togglePlay} title={playing ? 'Pause' : 'Play'}>
+                    {playing ? <IPause style={{ width: 24, height: 24 }} /> : <IPlay style={{ width: 24, height: 24, marginLeft: 2 }} />}
+                  </button>
+                  <button className="ctrl-action-primary" onClick={() => seekOffset(10)} title="+10 seconds">
+                    <span style={{ fontSize: '15px', fontWeight: '800' }}>10 ›</span>
+                    <span>+10s</span>
+                  </button>
+
+                  <div style={{ position: 'relative' }}>
+                    <button className="ctrl-action-primary" onClick={() => setQualityMenuOpen(o => !o)} title="Playback Quality">
+                      <IGear style={{ width: 18, height: 18, color: 'var(--accent)' }} />
+                      <span style={{ color: 'var(--accent)', fontWeight: '700' }}>
+                        {quality === 'auto' ? 'Auto' : quality.replace('hd', '')}
+                      </span>
+                    </button>
+                    {qualityMenuOpen && (
+                      <div className="quality-dropdown-menu">
+                        <div className="qdm-title">Resolution</div>
+                        {QUALITY_OPTIONS.map(opt => (
+                          <button key={opt.id} className={`qdm-item ${quality === opt.id ? 'active' : ''}`} onClick={() => selectQuality(opt.id)}>
+                            <span>{opt.label}</span>
+                            {quality === opt.id && <ICheck style={{ width: 14, height: 14, color: 'var(--accent)' }} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <button className="ctrl-action" onClick={toggleFullscreen} title="Fullscreen">
-                  <IExpand /><span>Full</span>
-                </button>
-                <button className="ctrl-action" onClick={handleShare} title="Share video">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 19, height: 19 }}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg>
-                  <span>Share</span>
-                </button>
-                <button className={`ctrl-action ${done ? 'done-active' : ''}`} onClick={toggleWatched} title="Toggle watched">
-                  <ICheck style={{ width: 19, height: 19, color: done ? 'var(--good)' : 'var(--ink-soft)' }} />
-                  <span style={{ color: done ? 'var(--good)' : 'inherit' }}>{done ? 'Watched' : 'Done'}</span>
-                </button>
+                <div className="player-controls-divider" />
+
+                {/* ROW 2: UTILITY ACTIONS */}
+                <div className="player-utility-row">
+                  <button className="ctrl-btn-util" onClick={toggleFullscreen} title="Fullscreen">
+                    <IExpand style={{ width: 16, height: 16 }} />
+                    <span>Fullscreen</span>
+                  </button>
+                  <button className="ctrl-btn-util" onClick={handleShare} title="Share video">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 16, height: 16 }}>
+                      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" />
+                    </svg>
+                    <span>Share</span>
+                  </button>
+                  <button className={`ctrl-btn-util ${done ? 'done-active' : ''}`} onClick={toggleWatched} title="Toggle watched">
+                    <ICheck style={{ width: 16, height: 16, color: done ? 'var(--good)' : 'var(--ink-soft)' }} />
+                    <span style={{ color: done ? 'var(--good)' : 'inherit' }}>{done ? 'Watched' : 'Mark Done'}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="info">
