@@ -27,7 +27,7 @@ export function ProgressScreen() {
   ];
 
   const cur = useStore(s => s.cur);
-  const bottomPad = 56 + insets.bottom + (cur ? 60 + 20 : 20);
+  const bottomPad = 56 + insets.bottom + (cur ? 60 + 36 : 36);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: bottomPad }}>

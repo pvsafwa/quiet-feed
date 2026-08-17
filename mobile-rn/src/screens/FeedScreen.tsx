@@ -44,7 +44,7 @@ export function FeedScreen() {
 
   const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
-  const bottomPad = 56 + insets.bottom + (cur ? 60 + 20 : 20);
+  const bottomPad = 56 + insets.bottom + (cur ? 60 + 36 : 36);
 
   return (
     <FlatList

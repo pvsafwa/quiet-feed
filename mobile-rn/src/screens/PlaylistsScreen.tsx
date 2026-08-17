@@ -26,7 +26,7 @@ export function PlaylistsScreen() {
   const runPlaylists = useStore(s => s.runPlaylists);
   const compute = useStore(s => s.computePlaylistDurations);
   const insets = useSafeAreaInsets();
-  const bottomPad = 56 + insets.bottom + (cur ? 60 + 20 : 20);
+  const bottomPad = 56 + insets.bottom + (cur ? 60 + 36 : 36);
 
   const selectedChannel = useMemo(() => {
     return channels.find(c => c.id === filter);

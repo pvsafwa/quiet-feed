@@ -27,6 +27,15 @@ const DEBUG_VIDEO = {
   published: new Date().toISOString(), thumb: '', seconds: 200,
 } as any;
 
+function getActiveRouteName(state: any): string {
+  if (!state || !state.routes || state.routes.length === 0) return '';
+  const route = state.routes[state.index ?? state.routes.length - 1];
+  if (route.state) {
+    return getActiveRouteName(route.state);
+  }
+  return route.name;
+}
+
 export default function App() {
   const authReady = useStore(s => s.authReady);
   const user = useStore(s => s.user);
@@ -35,12 +44,20 @@ export default function App() {
     if (DEBUG_PLAYER) { useStore.getState().openPlayer(DEBUG_VIDEO); return; }
     useStore.getState().init();
 
+    // Check for updates on startup (after a slight delay to allow network init)
+    const startupTimer = setTimeout(() => {
+      useStore.getState().checkAppUpdate(false);
+    }, 3000);
+
     // Check for updates periodically every 4 hours while app is alive
     const interval = setInterval(() => {
       useStore.getState().checkAppUpdate(false);
     }, 4 * 60 * 60 * 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(startupTimer);
+      clearInterval(interval);
+    };
   }, []);
 
   if (DEBUG_PLAYER) {
@@ -63,7 +80,14 @@ export default function App() {
         ) : !user ? (
           <LoginScreen />
         ) : (
-          <NavigationContainer theme={navTheme as any}>
+          <NavigationContainer
+            theme={navTheme as any}
+            onStateChange={(state) => {
+              const routeName = getActiveRouteName(state);
+              const isTab = ['Videos', 'Playlists', 'Progress', 'Tabs', 'Main'].includes(routeName);
+              useStore.getState().setIsTabScreen(isTab);
+            }}
+          >
             <RootNavigator />
           </NavigationContainer>
         )}

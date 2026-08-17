@@ -53,6 +53,7 @@ export interface Store {
   playerQueue: Video[];      // The list context when player was opened
   playerQueueIdx: number;    // Index of cur in playerQueue
   drawerOpen: boolean;
+  isTabScreen: boolean;
 
   // In-app update state
   updateRelease: AppRelease | null;
@@ -65,6 +66,7 @@ export interface Store {
   playNext(): boolean;
   playPrev(): boolean;
   setDrawerOpen(open: boolean): void;
+  setIsTabScreen(isTab: boolean): void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   afterLogin(): Promise<void>;
@@ -124,6 +126,7 @@ export const useStore = create<Store>((set, get) => ({
   playerQueue: [],
   playerQueueIdx: -1,
   drawerOpen: false,
+  isTabScreen: true,
 
   updateRelease: null,
   updateModalOpen: false,
@@ -154,6 +157,7 @@ export const useStore = create<Store>((set, get) => ({
     return false;
   },
   setDrawerOpen(open) { set({ drawerOpen: open }); },
+  setIsTabScreen(isTab) { set({ isTabScreen: isTab }); },
 
   async init() {
     // Load device-local prefs + previous-visit stamp + user-selected channels

@@ -62,7 +62,7 @@ export function SettingsScreen() {
 
   const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
-  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
+  const bottomPad = insets.bottom + (cur ? 60 + 40 : 40);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18, paddingBottom: bottomPad }}>

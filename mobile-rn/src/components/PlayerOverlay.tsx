@@ -44,13 +44,22 @@ function PlayerWindow({ video }: { video: Video }) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const drawerOpen = useStore(s => s.drawerOpen);
+  const isTabScreen = useStore(s => s.isTabScreen);
 
-  // Y-translation to dock the mini player above the bottom tab bar.
-  const MAX_Y = height - insets.bottom - TAB_BAR_HEIGHT - MINI_PLAYER_HEIGHT;
+  // Y-translation to dock the mini player above the bottom tab bar (or screen bottom on stack screens).
+  const tabHeight = isTabScreen ? TAB_BAR_HEIGHT : 0;
+  const MAX_Y = height - insets.bottom - tabHeight - MINI_PLAYER_HEIGHT;
   const MIN_Y = 0;
 
   const translateY = useSharedValue(0); // Starts expanded
   const isMinimized = useSharedValue(false);
+
+  // Adapt docking position dynamically when navigating between tab screens and stack screens
+  useEffect(() => {
+    if (isMinimized.value) {
+      translateY.value = withSpring(MAX_Y, { damping: 20, stiffness: 200, mass: 0.8 });
+    }
+  }, [MAX_Y]);
 
   const playerRef = useRef<any>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);

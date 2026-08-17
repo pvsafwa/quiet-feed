@@ -22,7 +22,7 @@ export function TrackedCoursesScreen() {
 
   const insets = useSafeAreaInsets();
   const cur = useStore(s => s.cur);
-  const bottomPad = insets.bottom + (cur ? 60 + 20 : 20);
+  const bottomPad = insets.bottom + (cur ? 60 + 36 : 36);
 
   return (
     <FlatList
