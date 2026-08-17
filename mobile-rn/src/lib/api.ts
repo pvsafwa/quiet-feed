@@ -36,6 +36,10 @@ export function setAuthToken(t: string | null) { _token = t; }
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(opts.headers as Record<string, string>) };
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) headers['x-timezone'] = tz;
+  } catch {}
   if (opts.body) headers['Content-Type'] = 'application/json';
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
   let r: Response;

@@ -183,10 +183,10 @@ function PlayerWindow({ video }: { video: Video }) {
           setTotalDuration(duration);
         }
 
-        addWatch(prog, video.id, 1, duration);
-        setPos(prog, video.id, t, duration);
+        addWatch(prog, video, 1, duration);
+        setPos(prog, video, t, duration);
         if (duration > 0 && t / duration >= 0.92 && !isDone(prog, video.id)) {
-          markDone(prog, video.id, duration);
+          markDone(prog, video, duration);
         }
 
         tcRef.current++;
@@ -254,7 +254,7 @@ function PlayerWindow({ video }: { video: Video }) {
     if (__DEV__) console.log('[player state]', state);
     if (state === 'ended') {
       const prog = useStore.getState().prog;
-      markDone(prog, video.id, video.seconds);
+      markDone(prog, video, video.seconds);
       useStore.getState().commitProg();
       setPlaying(false);
       setWantPlay(false);
@@ -363,7 +363,7 @@ function PlayerWindow({ video }: { video: Video }) {
       useStore.getState().commitProg();
       useStore.getState().toast('Marked unwatched');
     } else {
-      markDone(prog, video.id, totalDuration || video.seconds);
+      markDone(prog, video, totalDuration || video.seconds);
       useStore.getState().commitProg();
       useStore.getState().toast('Marked watched');
     }

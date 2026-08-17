@@ -8,7 +8,27 @@ import { upsertUserFromGoogle, getUserById, listAllUsers, publicUser } from '../
 
 export const authRouter = Router();
 
-const googleBody = z.object({ credential: z.string().min(1) });
+const googleBody = z.object({
+  credential: z.string().min(1),
+  timezone: z.string().optional(),
+});
+
+function resolveLocation(timezone?: string, headers?: any): string {
+  const city = headers?.['cf-ipcity'] || headers?.['x-city'] || '';
+  const country = headers?.['cf-ipcountry'] || headers?.['x-country'] || '';
+  if (city && country) return `${city}, ${country}`;
+  if (country) return country;
+  if (timezone) {
+    const parts = timezone.split('/');
+    if (parts.length > 1) {
+      const cityOrRegion = parts[parts.length - 1].replace(/_/g, ' ');
+      const continent = parts[0].replace(/_/g, ' ');
+      return `${cityOrRegion}, ${continent}`;
+    }
+    return timezone;
+  }
+  return '';
+}
 
 // Exchange a Google ID token for a session cookie.
 authRouter.post(
@@ -27,7 +47,16 @@ authRouter.post(
       res.status(401).json({ error: 'Could not verify Google sign-in' });
       return;
     }
-    const user = await upsertUserFromGoogle(profile);
+
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
+    const timezone = (req.headers['x-timezone'] as string) || parsed.data.timezone || '';
+    const location = resolveLocation(timezone, req.headers);
+
+    const user = await upsertUserFromGoogle(profile, {
+      ip: clientIp,
+      timezone,
+      location,
+    });
     const token = issueSession(res, { uid: user.id, role: user.role });
     // `token` is for native clients (Bearer); the web ignores it and uses the cookie.
     res.json({ user: publicUser(user), token });

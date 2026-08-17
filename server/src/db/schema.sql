@@ -11,8 +11,15 @@ CREATE TABLE IF NOT EXISTS users (
   picture     TEXT NOT NULL DEFAULT '',
   role        TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_login  TIMESTAMPTZ NOT NULL DEFAULT now()
+  last_login  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  location    TEXT NOT NULL DEFAULT '',
+  timezone    TEXT NOT NULL DEFAULT '',
+  last_ip     TEXT NOT NULL DEFAULT ''
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ip TEXT NOT NULL DEFAULT '';
 
 -- Admin-curated channels everyone sees.
 CREATE TABLE IF NOT EXISTS channels (
