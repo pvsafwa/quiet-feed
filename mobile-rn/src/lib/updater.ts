@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-export const CURRENT_APP_VERSION = '1.0.41';
-export const CURRENT_VERSION_CODE = 45;
+export const CURRENT_APP_VERSION = '1.0.42';
+export const CURRENT_VERSION_CODE = 46;
 
 const SNOOZE_KEY = 'qf_update_snooze_until';
 const GITHUB_REPO = 'pvsafwa/quiet-feed';

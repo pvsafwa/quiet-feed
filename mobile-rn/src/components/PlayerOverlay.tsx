@@ -7,7 +7,6 @@ import {
   StyleSheet,
   useWindowDimensions,
   DeviceEventEmitter,
-  TouchableWithoutFeedback,
   Share,
   BackHandler,
   PanResponder,
@@ -61,13 +60,39 @@ function PlayerWindow({ video }: { video: Video }) {
 
   const translateY = useSharedValue(playerStartMinimized ? MAX_Y : 0);
   const isMinimized = useSharedValue(playerStartMinimized);
+  const [minimizedState, setMinimizedState] = useState(playerStartMinimized);
+
+  const expand = () => {
+    isMinimized.value = false;
+    setMinimizedState(false);
+    translateY.value = withSpring(MIN_Y, { damping: 22, stiffness: 220, mass: 0.8 });
+  };
+
+  const minimize = () => {
+    if (isLandscape) {
+      ExpoPip.setOrientationPortrait();
+    }
+    isMinimized.value = true;
+    setMinimizedState(true);
+    translateY.value = withSpring(MAX_Y, { damping: 22, stiffness: 220, mass: 0.8 });
+  };
+
+  // Expand immediately whenever openPlayer is called with playerStartMinimized: false
+  useEffect(() => {
+    if (!playerStartMinimized) {
+      expand();
+      setWantPlay(true);
+    } else {
+      minimize();
+    }
+  }, [playerStartMinimized, video.id]);
 
   // Adapt docking position dynamically when navigating between tab screens and stack screens
   useEffect(() => {
     if (isMinimized.value || playerStartMinimized) {
-      translateY.value = withSpring(MAX_Y, { damping: 20, stiffness: 200, mass: 0.8 });
+      translateY.value = withSpring(MAX_Y, { damping: 22, stiffness: 220, mass: 0.8 });
     }
-  }, [MAX_Y, playerStartMinimized]);
+  }, [MAX_Y, isTabScreen]);
 
   const playerRef = useRef<any>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -284,9 +309,9 @@ function PlayerWindow({ video }: { video: Video }) {
   const progStore = useStore(s => s.prog);
   const progVersion = useStore(s => s.progV);
   useEffect(() => {
-    const pr = progStore.v[video.id];
-    const initialPos = pr && !pr.done && pr.p > 0 ? Math.floor(pr.p) : 0;
-    const initialDur = video.seconds || (pr && pr.d) || 0;
+    const prRec = progStore.v[video.id];
+    const initialPos = prRec && !prRec.done && prRec.p > 0 ? Math.floor(prRec.p) : 0;
+    const initialDur = video.seconds || (prRec && prRec.d) || 0;
     if (initialDur > 0 && (!totalDuration || totalDuration === 0)) {
       setTotalDuration(initialDur);
     }
@@ -462,11 +487,11 @@ function PlayerWindow({ video }: { video: Video }) {
       ExpoPip.setPlaybackState(true);
 
       // If resuming from a saved position that hadn't applied on initial mount
-      const pr = useStore.getState().prog.v[video.id];
-      if (pr && pr.p > 2 && (!pr.done || pr.p < (pr.d || 9999) * 0.95)) {
+      const prRec = useStore.getState().prog.v[video.id];
+      if (prRec && prRec.p > 2 && (!prRec.done || prRec.p < (prRec.d || 9999) * 0.95)) {
         playerRef.current?.getCurrentTime().then((t: number) => {
-          if (t < 2 && pr.p > 5) {
-            playerRef.current?.seekTo(Math.floor(pr.p), true);
+          if (t < 2 && prRec.p > 5) {
+            playerRef.current?.seekTo(Math.floor(prRec.p), true);
           }
         }).catch(() => {});
       }
@@ -508,15 +533,6 @@ function PlayerWindow({ video }: { video: Video }) {
     const newPos = Math.max(0, Math.min(totalDuration || 9999, currentTime + secondsOffset));
     playerRef.current?.seekTo(newPos, true);
     setCurrentTime(newPos);
-  };
-
-  const handleSeekToRatio = (ratio: number) => {
-    resetHideTimer();
-    if (totalDuration <= 0) return;
-    const clampedRatio = Math.max(0, Math.min(1, ratio));
-    const targetSec = clampedRatio * totalDuration;
-    playerRef.current?.seekTo(targetSec, true);
-    setCurrentTime(targetSec);
   };
 
   const handleShare = async () => {
@@ -562,35 +578,38 @@ function PlayerWindow({ video }: { video: Video }) {
     useStore.getState().closePlayer();
   };
 
-  const minimize = () => {
-    if (isLandscape) {
-      ExpoPip.setOrientationPortrait();
-    }
-    isMinimized.value = true;
-    translateY.value = withSpring(MAX_Y, { damping: 20, stiffness: 200, mass: 0.8 });
-  };
-
-  const expand = () => {
-    isMinimized.value = false;
-    translateY.value = withSpring(MIN_Y, { damping: 20, stiffness: 200, mass: 0.8 });
-  };
-
-  const panGesture = Gesture.Pan()
+  // Mini-player upward swipe gesture
+  const miniPanGesture = Gesture.Pan()
     .enabled(!isLandscape)
-    .activeOffsetY([12, 12])
+    .activeOffsetY([-10, 10])
     .failOffsetX([-20, 20])
     .onUpdate((e) => {
-      const newY = isMinimized.value ? MAX_Y + e.translationY : e.translationY;
-      translateY.value = Math.max(MIN_Y, Math.min(newY, MAX_Y));
+      translateY.value = Math.max(MIN_Y, Math.min(MAX_Y + e.translationY, MAX_Y));
+    })
+    .onEnd((e) => {
+      if (e.translationY < -40 || e.velocityY < -400) {
+        runOnJS(expand)();
+      } else {
+        runOnJS(minimize)();
+      }
+    });
+
+  // Expanded top header downward swipe gesture
+  const topBarPanGesture = Gesture.Pan()
+    .enabled(!isLandscape)
+    .activeOffsetY([-10, 10])
+    .failOffsetX([-20, 20])
+    .onUpdate((e) => {
+      if (e.translationY > 0) {
+        translateY.value = Math.min(e.translationY, MAX_Y);
+      }
     })
     .onEnd((e) => {
       const threshold = MAX_Y / 3;
-      if (isMinimized.value) {
-        if (e.translationY < -50 || e.velocityY < -500) runOnJS(expand)();
-        else runOnJS(minimize)();
+      if (e.translationY > threshold || e.velocityY > 500) {
+        runOnJS(minimize)();
       } else {
-        if (e.translationY > threshold || e.velocityY > 500) runOnJS(minimize)();
-        else runOnJS(expand)();
+        runOnJS(expand)();
       }
     });
 
@@ -603,18 +622,18 @@ function PlayerWindow({ video }: { video: Video }) {
 
   const animatedExpandedStyle = useAnimatedStyle(() => {
     if (isLandscape) {
-      return { opacity: 1, pointerEvents: 'auto' };
+      return { opacity: 1 };
     }
     const opacity = interpolate(translateY.value, [MIN_Y, MAX_Y / 2], [1, 0], Extrapolation.CLAMP);
-    return { opacity, pointerEvents: opacity > 0.5 ? 'auto' : 'none' };
+    return { opacity };
   });
 
   const animatedMiniStyle = useAnimatedStyle(() => {
     if (isLandscape || drawerOpen) {
-      return { opacity: 0, pointerEvents: 'none' };
+      return { opacity: 0 };
     }
     const opacity = interpolate(translateY.value, [MAX_Y / 2, MAX_Y], [0, 1], Extrapolation.CLAMP);
-    return { opacity, pointerEvents: opacity > 0.5 ? 'auto' : 'none' };
+    return { opacity };
   });
 
   const TARGET_WIDTH = 640;
@@ -636,14 +655,16 @@ function PlayerWindow({ video }: { video: Video }) {
 
   return (
     <View style={styles.rootWrapper} pointerEvents={drawerOpen ? 'none' : 'box-none'}>
-      <GestureDetector gesture={panGesture}>
-        <Animated.View pointerEvents="box-none" style={[styles.container, animatedContainerStyle]}>
+      <Animated.View pointerEvents="box-none" style={[styles.container, animatedContainerStyle]}>
 
-          {/* EXPANDED / FULLSCREEN PLAYER CONTENT */}
-          <Animated.View style={[StyleSheet.absoluteFill, styles.expandedBg, animatedExpandedStyle]}>
-            
-            {/* Top Bar for Minimize & Close (Portrait only) */}
-            {!isLandscape && (
+        {/* EXPANDED / FULLSCREEN PLAYER CONTENT */}
+        <Animated.View
+          pointerEvents={minimizedState && !isLandscape ? 'none' : 'auto'}
+          style={[StyleSheet.absoluteFill, styles.expandedBg, animatedExpandedStyle]}
+        >
+          {/* Top Bar for Minimize, Drag & Close (Portrait only) */}
+          {!isLandscape && (
+            <GestureDetector gesture={topBarPanGesture}>
               <View style={[styles.topControlsBar, { paddingTop: Math.max(insets.top, 12) }]}>
                 <Pressable hitSlop={14} onPress={minimize} style={styles.topBtn}>
                   <Ionicons name="chevron-down" size={24} color={colors.ink} />
@@ -660,371 +681,376 @@ function PlayerWindow({ video }: { video: Video }) {
                   <Ionicons name="close" size={24} color={colors.ink} />
                 </Pressable>
               </View>
+            </GestureDetector>
+          )}
+
+          {/* Video Container */}
+          <View style={{ width: parentWidth, height: parentHeight, backgroundColor: '#000', overflow: 'hidden' }}>
+            <View pointerEvents="none" style={{
+              position: 'absolute',
+              left: (parentWidth - TARGET_WIDTH) / 2,
+              top: (parentHeight - TARGET_HEIGHT) / 2,
+              width: TARGET_WIDTH,
+              height: TARGET_HEIGHT,
+              transform: [{ scale }]
+            }}>
+              <YoutubePlayer
+                ref={playerRef}
+                height={TARGET_HEIGHT}
+                width={TARGET_WIDTH}
+                play={wantPlay}
+                videoId={video.id}
+                onChangeState={onChangeState}
+                initialPlayerParams={{ rel: false, modestbranding: true, iv_load_policy: 3, start: startAt, controls: 0, fs: 0, showClosedCaptions: false, cc_lang_pref: 'none' }}
+                webViewProps={{
+                  allowsInlineMediaPlayback: true,
+                  mediaPlaybackRequiresUserAction: false,
+                  androidLayerType: 'hardware',
+                  injectedJavaScript: `
+                    (function() {
+                      try {
+                        Object.defineProperty(document, 'hidden', { get: function() { return false; } });
+                        Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
+                        window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                        document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                        
+                        var s = document.getElementById('qf-cc-style');
+                        if (!s) {
+                          s = document.createElement('style');
+                          s.id = 'qf-cc-style';
+                          document.head.appendChild(s);
+                        }
+                        s.innerHTML = '.ytp-caption-window-container, .caption-window, .ytp-caption-segment, .ytp-caption-window-bottom { display: none !important; opacity: 0 !important; visibility: hidden !important; }';
+                        
+                        var disableCC = function() {
+                          try {
+                            if (window.player && typeof window.player.unloadModule === 'function') {
+                              window.player.unloadModule('captions');
+                            }
+                            if (window.player && typeof window.player.setOption === 'function') {
+                              window.player.setOption('captions', 'track', {});
+                            }
+                          } catch(e) {}
+                        };
+                        disableCC();
+                        setTimeout(disableCC, 1000);
+                        setTimeout(disableCC, 3000);
+                      } catch(e) {}
+                    })();
+                    true;
+                  `,
+                }}
+              />
+            </View>
+
+            {/* AUTO-PLAY "UP NEXT" COUNTDOWN OVERLAY */}
+            {ended && autoPlayCountdown !== null && nextVideo && (
+              <View style={styles.autoPlayOverlay}>
+                <View style={styles.autoPlayCard}>
+                  <Text style={styles.autoPlayHeader}>Up next in {autoPlayCountdown}s</Text>
+                  <Text style={styles.autoPlayTitle} numberOfLines={2}>{nextVideo.title}</Text>
+                  <Text style={styles.autoPlaySub} numberOfLines={1}>{nextVideo.channelTitle}</Text>
+                  
+                  <View style={styles.autoPlayActions}>
+                    <Pressable style={styles.autoPlayCancelBtn} onPress={handleCancelAutoPlay}>
+                      <Text style={styles.autoPlayCancelText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable style={styles.autoPlayNowBtn} onPress={handlePlayNext}>
+                      <Ionicons name="play" size={16} color={colors.onAccent} />
+                      <Text style={styles.autoPlayNowText}>Play Now</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
             )}
 
-            {/* Video Container */}
-            <View style={{ width: parentWidth, height: parentHeight, backgroundColor: '#000', overflow: 'hidden' }}>
-              <View pointerEvents="none" style={{
-                position: 'absolute',
-                left: (parentWidth - TARGET_WIDTH) / 2,
-                top: (parentHeight - TARGET_HEIGHT) / 2,
-                width: TARGET_WIDTH,
-                height: TARGET_HEIGHT,
-                transform: [{ scale }]
-              }}>
-                <YoutubePlayer
-                  ref={playerRef}
-                  height={TARGET_HEIGHT}
-                  width={TARGET_WIDTH}
-                  play={wantPlay}
-                  videoId={video.id}
-                  onChangeState={onChangeState}
-                  initialPlayerParams={{ rel: false, modestbranding: true, iv_load_policy: 3, start: startAt, controls: 0, fs: 0, showClosedCaptions: false, cc_lang_pref: 'none' }}
-                  webViewProps={{
-                    allowsInlineMediaPlayback: true,
-                    mediaPlaybackRequiresUserAction: false,
-                    androidLayerType: 'hardware',
-                    injectedJavaScript: `
-                      (function() {
-                        try {
-                          Object.defineProperty(document, 'hidden', { get: function() { return false; } });
-                          Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
-                          window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-                          document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-                          
-                          var s = document.getElementById('qf-cc-style');
-                          if (!s) {
-                            s = document.createElement('style');
-                            s.id = 'qf-cc-style';
-                            document.head.appendChild(s);
-                          }
-                          s.innerHTML = '.ytp-caption-window-container, .caption-window, .ytp-caption-segment, .ytp-caption-window-bottom { display: none !important; opacity: 0 !important; visibility: hidden !important; }';
-                          
-                          var disableCC = function() {
-                            try {
-                              if (window.player && typeof window.player.unloadModule === 'function') {
-                                window.player.unloadModule('captions');
-                              }
-                              if (window.player && typeof window.player.setOption === 'function') {
-                                window.player.setOption('captions', 'track', {});
-                              }
-                            } catch(e) {}
-                          };
-                          disableCC();
-                          setTimeout(disableCC, 1000);
-                          setTimeout(disableCC, 3000);
-                        } catch(e) {}
-                      })();
-                      true;
-                    `,
+            {/* LANDSCAPE IMMERSIVE OVERLAY HUD */}
+            {isLandscape ? (
+              <Pressable
+                style={styles.landscapeTouchArea}
+                onPress={() => {
+                  setShowLandscapeControls(v => !v);
+                  resetHideTimer();
+                }}
+              >
+                {showLandscapeControls && (
+                  <View style={styles.landscapeHudContainer}>
+                    {/* Top Bar in Landscape */}
+                    <View style={[styles.landscapeTopBar, { paddingTop: Math.max(insets.top, 10), paddingHorizontal: Math.max(insets.left, 16) }]}>
+                      <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
+                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                      </Pressable>
+                      <View style={styles.landscapeTitleWrap}>
+                        <Text style={styles.landscapeVideoTitle} numberOfLines={1}>{video.title}</Text>
+                        <Text style={styles.landscapeChannelTitle} numberOfLines={1}>
+                          {video.channelTitle}
+                          {playerQueue.length > 1 ? ` · ${playerQueueIdx + 1}/${playerQueue.length}` : ''}
+                        </Text>
+                      </View>
+                      <View style={styles.landscapeTopRight}>
+                        <Pressable hitSlop={10} onPress={handleShare} style={styles.hudIconBtn}>
+                          <Ionicons name="share-social-outline" size={22} color="#fff" />
+                        </Pressable>
+                        <Pressable hitSlop={10} onPress={closePlayer} style={styles.hudIconBtn}>
+                          <Ionicons name="close" size={24} color="#fff" />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    {/* Center Playback Controls in Landscape */}
+                    <View style={styles.landscapeCenterControls}>
+                      {hasPrev && (
+                        <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayPrev}>
+                          <Ionicons name="play-skip-back" size={26} color="#fff" />
+                          <Text style={styles.landscapeCenterLabel}>Prev</Text>
+                        </Pressable>
+                      )}
+
+                      <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(-10)}>
+                        <Ionicons name="play-back" size={30} color="#fff" />
+                        <Text style={styles.landscapeCenterLabel}>-10s</Text>
+                      </Pressable>
+
+                      {ended && autoPlayCountdown === null ? (
+                        <Pressable style={styles.landscapePlayOrb} onPress={handleReplay}>
+                          <Ionicons name="refresh" size={38} color="#fff" />
+                        </Pressable>
+                      ) : (
+                        <Pressable style={styles.landscapePlayOrb} onPress={() => { setWantPlay(!playing); resetHideTimer(); }}>
+                          <Ionicons name={playing ? 'pause' : 'play'} size={40} color="#fff" style={!playing ? { marginLeft: 3 } : undefined} />
+                        </Pressable>
+                      )}
+
+                      <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(10)}>
+                        <Ionicons name="play-forward" size={30} color="#fff" />
+                        <Text style={styles.landscapeCenterLabel}>+10s</Text>
+                      </Pressable>
+
+                      {hasNext && (
+                        <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayNext}>
+                          <Ionicons name="play-skip-forward" size={26} color="#fff" />
+                          <Text style={styles.landscapeCenterLabel}>Next</Text>
+                        </Pressable>
+                      )}
+                    </View>
+
+                    {/* Bottom Bar in Landscape */}
+                    <View style={[styles.landscapeBottomBar, { paddingBottom: Math.max(insets.bottom, 12), paddingHorizontal: Math.max(insets.left, 18) }]}>
+                      <Text style={[styles.landscapeTimeText, isScrubbing && { color: colors.accent }]}>
+                        {fmtDur(Math.floor(displayTime)) || '0:00'}
+                      </Text>
+                      <View
+                        style={styles.landscapeProgressTouch}
+                        onLayout={(e) => {
+                          landscapeBarWidthRef.current = e.nativeEvent.layout.width;
+                        }}
+                        {...landscapeSeekPanResponder.panHandlers}
+                      >
+                        <View style={styles.landscapeProgressTrack} pointerEvents="none">
+                          <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
+                        </View>
+                        <View
+                          style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]}
+                          pointerEvents="none"
+                        />
+                      </View>
+                      <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</Text>
+                      <Pressable
+                        hitSlop={12}
+                        onPress={toggleCaptions}
+                        style={[styles.hudIconBtn, captionsOn && { backgroundColor: 'rgba(235, 120, 39, 0.3)', borderRadius: 6 }]}
+                        accessibilityLabel={captionsOn ? 'Disable captions' : 'Enable captions'}
+                      >
+                        <Ionicons name="logo-closed-captioning" size={20} color={captionsOn ? colors.accent : '#fff'} />
+                      </Pressable>
+                      <Pressable
+                        hitSlop={12}
+                        onPress={toggleVideoFitMode}
+                        style={styles.hudIconBtn}
+                        accessibilityLabel={videoFitMode === 'fit' ? 'Zoom to Fill' : 'Fit to Screen (Original 16:9)'}
+                      >
+                        <Ionicons name={videoFitMode === 'fit' ? 'scan-outline' : 'contract-outline'} size={20} color="#fff" />
+                      </Pressable>
+                      <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
+                        <Ionicons name="contract" size={22} color="#fff" />
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+              </Pressable>
+            ) : (
+              /* PORTRAIT VIDEO OVERLAY */
+              <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
+                {ended && autoPlayCountdown === null ? (
+                  <Pressable style={styles.orb} onPress={handleReplay}>
+                    <Ionicons name="refresh" size={32} color={colors.onAccent} />
+                  </Pressable>
+                ) : !playing && autoPlayCountdown === null ? (
+                  <View style={styles.orb}>
+                    <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
+                  </View>
+                ) : (
+                  <View style={styles.transparentOverlay} />
+                )}
+              </Pressable>
+            )}
+          </View>
+
+          {/* PORTRAIT CONTROLS & INFO */}
+          {!isLandscape && (
+            <>
+              {/* PROGRESS BAR & SEEK CONTROLLER (PRECISION TAP + HOLD + SWIPE) */}
+              <View style={styles.progressContainer}>
+                <View
+                  style={styles.progressBarTouch}
+                  onLayout={(e) => {
+                    portraitBarWidthRef.current = e.nativeEvent.layout.width;
                   }}
-                />
+                  {...portraitSeekPanResponder.panHandlers}
+                >
+                  <View style={styles.progressTrack} pointerEvents="none">
+                    <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
+                  </View>
+                  <View
+                    style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]}
+                    pointerEvents="none"
+                  />
+                </View>
+                
+                <View style={styles.timeRow}>
+                  <Text style={[styles.timeText, isScrubbing && { color: colors.accent, fontWeight: '700' }]}>
+                    {fmtDur(Math.floor(displayTime)) || '0:00'}
+                  </Text>
+                  <Text style={styles.timeText}>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</Text>
+                </View>
               </View>
 
-              {/* AUTO-PLAY "UP NEXT" COUNTDOWN OVERLAY */}
-              {ended && autoPlayCountdown !== null && nextVideo && (
-                <View style={styles.autoPlayOverlay}>
-                  <View style={styles.autoPlayCard}>
-                    <Text style={styles.autoPlayHeader}>Up next in {autoPlayCountdown}s</Text>
-                    <Text style={styles.autoPlayTitle} numberOfLines={2}>{nextVideo.title}</Text>
-                    <Text style={styles.autoPlaySub} numberOfLines={1}>{nextVideo.channelTitle}</Text>
-                    
-                    <View style={styles.autoPlayActions}>
-                      <Pressable style={styles.autoPlayCancelBtn} onPress={handleCancelAutoPlay}>
-                        <Text style={styles.autoPlayCancelText}>Cancel</Text>
-                      </Pressable>
-                      <Pressable style={styles.autoPlayNowBtn} onPress={handlePlayNext}>
-                        <Ionicons name="play" size={16} color={colors.onAccent} />
-                        <Text style={styles.autoPlayNowText}>Play Now</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                </View>
-              )}
-
-              {/* LANDSCAPE IMMERSIVE OVERLAY HUD */}
-              {isLandscape ? (
-                <Pressable
-                  style={styles.landscapeTouchArea}
-                  onPress={() => {
-                    setShowLandscapeControls(v => !v);
-                    resetHideTimer();
-                  }}
-                >
-                  {showLandscapeControls && (
-                    <View style={styles.landscapeHudContainer}>
-                      {/* Top Bar in Landscape */}
-                      <View style={[styles.landscapeTopBar, { paddingTop: Math.max(insets.top, 10), paddingHorizontal: Math.max(insets.left, 16) }]}>
-                        <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
-                          <Ionicons name="arrow-back" size={24} color="#fff" />
-                        </Pressable>
-                        <View style={styles.landscapeTitleWrap}>
-                          <Text style={styles.landscapeVideoTitle} numberOfLines={1}>{video.title}</Text>
-                          <Text style={styles.landscapeChannelTitle} numberOfLines={1}>
-                            {video.channelTitle}
-                            {playerQueue.length > 1 ? ` · ${playerQueueIdx + 1}/${playerQueue.length}` : ''}
-                          </Text>
-                        </View>
-                        <View style={styles.landscapeTopRight}>
-                          <Pressable hitSlop={10} onPress={handleShare} style={styles.hudIconBtn}>
-                            <Ionicons name="share-social-outline" size={22} color="#fff" />
-                          </Pressable>
-                          <Pressable hitSlop={10} onPress={closePlayer} style={styles.hudIconBtn}>
-                            <Ionicons name="close" size={24} color="#fff" />
-                          </Pressable>
-                        </View>
-                      </View>
-
-                      {/* Center Playback Controls in Landscape */}
-                      <View style={styles.landscapeCenterControls}>
-                        {hasPrev && (
-                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayPrev}>
-                            <Ionicons name="play-skip-back" size={26} color="#fff" />
-                            <Text style={styles.landscapeCenterLabel}>Prev</Text>
-                          </Pressable>
-                        )}
-
-                        <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(-10)}>
-                          <Ionicons name="play-back" size={30} color="#fff" />
-                          <Text style={styles.landscapeCenterLabel}>-10s</Text>
-                        </Pressable>
-
-                        {ended && autoPlayCountdown === null ? (
-                          <Pressable style={styles.landscapePlayOrb} onPress={handleReplay}>
-                            <Ionicons name="refresh" size={38} color="#fff" />
-                          </Pressable>
-                        ) : (
-                          <Pressable style={styles.landscapePlayOrb} onPress={() => { setWantPlay(!playing); resetHideTimer(); }}>
-                            <Ionicons name={playing ? 'pause' : 'play'} size={40} color="#fff" style={!playing ? { marginLeft: 3 } : undefined} />
-                          </Pressable>
-                        )}
-
-                        <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(10)}>
-                          <Ionicons name="play-forward" size={30} color="#fff" />
-                          <Text style={styles.landscapeCenterLabel}>+10s</Text>
-                        </Pressable>
-
-                        {hasNext && (
-                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayNext}>
-                            <Ionicons name="play-skip-forward" size={26} color="#fff" />
-                            <Text style={styles.landscapeCenterLabel}>Next</Text>
-                          </Pressable>
-                        )}
-                      </View>
-
-                      {/* Bottom Bar in Landscape */}
-                      <View style={[styles.landscapeBottomBar, { paddingBottom: Math.max(insets.bottom, 12), paddingHorizontal: Math.max(insets.left, 18) }]}>
-                        <Text style={[styles.landscapeTimeText, isScrubbing && { color: colors.accent }]}>
-                          {fmtDur(Math.floor(displayTime)) || '0:00'}
-                        </Text>
-                        <View
-                          style={styles.landscapeProgressTouch}
-                          onLayout={(e) => {
-                            landscapeBarWidthRef.current = e.nativeEvent.layout.width;
-                          }}
-                          {...landscapeSeekPanResponder.panHandlers}
-                        >
-                          <View style={styles.landscapeProgressTrack} pointerEvents="none">
-                            <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
-                          </View>
-                          <View
-                            style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(98, progPct))}%` }]}
-                            pointerEvents="none"
-                          />
-                        </View>
-                        <Text style={styles.landscapeTimeText}>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</Text>
-                        <Pressable
-                          hitSlop={12}
-                          onPress={toggleCaptions}
-                          style={[styles.hudIconBtn, captionsOn && { backgroundColor: 'rgba(235, 120, 39, 0.3)', borderRadius: 6 }]}
-                          accessibilityLabel={captionsOn ? 'Disable captions' : 'Enable captions'}
-                        >
-                          <Ionicons name="logo-closed-captioning" size={20} color={captionsOn ? colors.accent : '#fff'} />
-                        </Pressable>
-                        <Pressable
-                          hitSlop={12}
-                          onPress={toggleVideoFitMode}
-                          style={styles.hudIconBtn}
-                          accessibilityLabel={videoFitMode === 'fit' ? 'Zoom to Fill' : 'Fit to Screen (Original 16:9)'}
-                        >
-                          <Ionicons name={videoFitMode === 'fit' ? 'scan-outline' : 'contract-outline'} size={20} color="#fff" />
-                        </Pressable>
-                        <Pressable hitSlop={12} onPress={toggleFullscreen} style={styles.hudIconBtn}>
-                          <Ionicons name="contract" size={22} color="#fff" />
-                        </Pressable>
-                      </View>
-                    </View>
-                  )}
-                </Pressable>
-              ) : (
-                /* PORTRAIT VIDEO OVERLAY */
-                <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
-                  {ended && autoPlayCountdown === null ? (
-                    <Pressable style={styles.orb} onPress={handleReplay}>
-                      <Ionicons name="refresh" size={32} color={colors.onAccent} />
+              {/* CONTROLS & ACTION BUTTONS (2 BEAUTIFUL ROWS) */}
+              <View style={styles.controlsCard}>
+                {/* ROW 1: PRIMARY PLAYBACK CONTROLS */}
+                <View style={styles.playbackRow}>
+                  {hasPrev ? (
+                    <Pressable style={styles.primaryActionBtn} onPress={handlePlayPrev}>
+                      <Ionicons name="play-skip-back" size={22} color={colors.ink} />
+                      <Text style={styles.primaryActionLabel}>Prev</Text>
                     </Pressable>
-                  ) : !playing && autoPlayCountdown === null ? (
-                    <View style={styles.orb}>
-                      <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
-                    </View>
                   ) : (
-                    <View style={styles.transparentOverlay} />
+                    <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
+                      <Ionicons name="refresh" size={22} color={colors.ink} />
+                      <Text style={styles.primaryActionLabel}>Restart</Text>
+                    </Pressable>
                   )}
-                </Pressable>
-              )}
-            </View>
 
-            {/* PORTRAIT CONTROLS & INFO */}
-            {!isLandscape && (
-              <>
-                {/* PROGRESS BAR & SEEK CONTROLLER (PRECISION TAP + HOLD + SWIPE) */}
-                <View style={styles.progressContainer}>
-                  <View
-                    style={styles.progressBarTouch}
-                    onLayout={(e) => {
-                      portraitBarWidthRef.current = e.nativeEvent.layout.width;
-                    }}
-                    {...portraitSeekPanResponder.panHandlers}
-                  >
-                    <View style={styles.progressTrack} pointerEvents="none">
-                      <View style={[styles.progressFill, { width: `${progPct}%` }]} pointerEvents="none" />
-                    </View>
-                    <View
-                      style={[isScrubbing ? styles.progressKnobScrubbing : styles.progressKnob, { left: `${Math.max(0, Math.min(97, progPct))}%` }]}
-                      pointerEvents="none"
+                  <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(-10)}>
+                    <Ionicons name="play-back" size={24} color={colors.ink} />
+                    <Text style={styles.primaryActionLabel}>-10s</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.playPauseOrb} onPress={() => setWantPlay(!playing)}>
+                    <Ionicons
+                      name={playing ? 'pause' : 'play'}
+                      size={28}
+                      color={colors.onAccent}
+                      style={!playing ? { marginLeft: 3 } : undefined}
                     />
-                  </View>
-                  
-                  <View style={styles.timeRow}>
-                    <Text style={[styles.timeText, isScrubbing && { color: colors.accent, fontWeight: '700' }]}>
-                      {fmtDur(Math.floor(displayTime)) || '0:00'}
-                    </Text>
-                    <Text style={styles.timeText}>{fmtDur(Math.floor(effectiveDuration)) || '--:--'}</Text>
-                  </View>
-                </View>
+                  </Pressable>
 
-                {/* CONTROLS & ACTION BUTTONS (2 BEAUTIFUL ROWS) */}
-                <View style={styles.controlsCard}>
-                  {/* ROW 1: PRIMARY PLAYBACK CONTROLS */}
-                  <View style={styles.playbackRow}>
-                    {hasPrev ? (
-                      <Pressable style={styles.primaryActionBtn} onPress={handlePlayPrev}>
-                        <Ionicons name="play-skip-back" size={22} color={colors.ink} />
-                        <Text style={styles.primaryActionLabel}>Prev</Text>
-                      </Pressable>
-                    ) : (
-                      <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
-                        <Ionicons name="refresh" size={22} color={colors.ink} />
-                        <Text style={styles.primaryActionLabel}>Restart</Text>
-                      </Pressable>
-                    )}
+                  <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(10)}>
+                    <Ionicons name="play-forward" size={24} color={colors.ink} />
+                    <Text style={styles.primaryActionLabel}>+10s</Text>
+                  </Pressable>
 
-                    <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(-10)}>
-                      <Ionicons name="play-back" size={24} color={colors.ink} />
-                      <Text style={styles.primaryActionLabel}>-10s</Text>
+                  {hasNext ? (
+                    <Pressable style={styles.primaryActionBtn} onPress={handlePlayNext}>
+                      <Ionicons name="play-skip-forward" size={22} color={colors.accent} />
+                      <Text style={[styles.primaryActionLabel, { color: colors.accent, fontWeight: '700' }]}>Next</Text>
                     </Pressable>
-
-                    <Pressable style={styles.playPauseOrb} onPress={() => setWantPlay(!playing)}>
-                      <Ionicons
-                        name={playing ? 'pause' : 'play'}
-                        size={28}
-                        color={colors.onAccent}
-                        style={!playing ? { marginLeft: 3 } : undefined}
-                      />
-                    </Pressable>
-
-                    <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(10)}>
-                      <Ionicons name="play-forward" size={24} color={colors.ink} />
-                      <Text style={styles.primaryActionLabel}>+10s</Text>
-                    </Pressable>
-
-                    {hasNext ? (
-                      <Pressable style={styles.primaryActionBtn} onPress={handlePlayNext}>
-                        <Ionicons name="play-skip-forward" size={22} color={colors.accent} />
-                        <Text style={[styles.primaryActionLabel, { color: colors.accent, fontWeight: '700' }]}>Next</Text>
-                      </Pressable>
-                    ) : (
-                      <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
-                        <Ionicons name="refresh" size={22} color={colors.inkSoft} />
-                        <Text style={styles.primaryActionLabel}>Replay</Text>
-                      </Pressable>
-                    )}
-                  </View>
-
-                  {/* DIVIDER BETWEEN ROWS */}
-                  <View style={styles.controlsDivider} />
-
-                  {/* ROW 2: SECONDARY UTILITY ACTIONS */}
-                  <View style={styles.utilityRow}>
-                    <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
-                      <Ionicons name="expand-outline" size={15} color={colors.inkSoft} />
-                      <Text style={styles.utilityLabel} numberOfLines={1}>Fullscreen</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={[styles.utilityBtn, captionsOn && styles.utilityBtnActive]}
-                      onPress={toggleCaptions}
-                      accessibilityLabel={captionsOn ? 'Disable captions' : 'Enable captions'}
-                    >
-                      <Ionicons
-                        name="logo-closed-captioning"
-                        size={15}
-                        color={captionsOn ? colors.accent : colors.inkSoft}
-                      />
-                      <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
-                        {captionsOn ? 'CC On' : 'CC Off'}
-                      </Text>
-                    </Pressable>
-
-                    <Pressable style={styles.utilityBtn} onPress={handleShare}>
-                      <Ionicons name="share-social-outline" size={15} color={colors.inkSoft} />
-                      <Text style={styles.utilityLabel} numberOfLines={1}>Share</Text>
-                    </Pressable>
-
-                    <Pressable style={[styles.utilityBtn, done && styles.utilityBtnDoneActive]} onPress={toggleWatched}>
-                      <Ionicons
-                        name={done ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                        size={15}
-                        color={done ? colors.good : colors.inkSoft}
-                      />
-                      <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]} numberOfLines={1}>
-                        Done
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Video Details Info */}
-                <View style={styles.info}>
-                  <Text style={styles.title}>{video.title}</Text>
-                  <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
-                  
-                  {hasNext && nextVideo && (
-                    <Pressable style={styles.upNextBanner} onPress={handlePlayNext}>
-                      <View style={styles.upNextBannerLeft}>
-                        <Ionicons name="play-forward-circle" size={22} color={colors.accent} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.upNextBannerLabel}>NEXT IN QUEUE</Text>
-                          <Text style={styles.upNextBannerTitle} numberOfLines={1}>{nextVideo.title}</Text>
-                        </View>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
+                  ) : (
+                    <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
+                      <Ionicons name="refresh" size={22} color={colors.inkSoft} />
+                      <Text style={styles.primaryActionLabel}>Replay</Text>
                     </Pressable>
                   )}
                 </View>
-              </>
-            )}
 
-          </Animated.View>
+                {/* DIVIDER BETWEEN ROWS */}
+                <View style={styles.controlsDivider} />
 
-          {/* MINIMIZED PLAYER CONTENT (ONLY SINGLE PLAY/PAUSE BUTTON) */}
-          <Animated.View style={[styles.miniPlayer, animatedMiniStyle]}>
-            {/* Mini Player Progress Bar */}
-            <View style={styles.miniProgBar}>
-              <View style={[styles.miniProgFill, { width: `${progPct}%` }]} />
-            </View>
-            <TouchableWithoutFeedback onPress={expand}>
-              <View style={styles.miniInner}>
+                {/* ROW 2: SECONDARY UTILITY ACTIONS */}
+                <View style={styles.utilityRow}>
+                  <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
+                    <Ionicons name="expand-outline" size={15} color={colors.inkSoft} />
+                    <Text style={styles.utilityLabel} numberOfLines={1}>Fullscreen</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[styles.utilityBtn, captionsOn && styles.utilityBtnActive]}
+                    onPress={toggleCaptions}
+                    accessibilityLabel={captionsOn ? 'Disable captions' : 'Enable captions'}
+                  >
+                    <Ionicons
+                      name="logo-closed-captioning"
+                      size={15}
+                      color={captionsOn ? colors.accent : colors.inkSoft}
+                    />
+                    <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
+                      {captionsOn ? 'CC On' : 'CC Off'}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable style={styles.utilityBtn} onPress={handleShare}>
+                    <Ionicons name="share-social-outline" size={15} color={colors.inkSoft} />
+                    <Text style={styles.utilityLabel} numberOfLines={1}>Share</Text>
+                  </Pressable>
+
+                  <Pressable style={[styles.utilityBtn, done && styles.utilityBtnDoneActive]} onPress={toggleWatched}>
+                    <Ionicons
+                      name={done ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                      size={15}
+                      color={done ? colors.good : colors.inkSoft}
+                    />
+                    <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]} numberOfLines={1}>
+                      Done
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Video Details Info */}
+              <View style={styles.info}>
+                <Text style={styles.title}>{video.title}</Text>
+                <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
+                
+                {hasNext && nextVideo && (
+                  <Pressable style={styles.upNextBanner} onPress={handlePlayNext}>
+                    <View style={styles.upNextBannerLeft}>
+                      <Ionicons name="play-forward-circle" size={22} color={colors.accent} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.upNextBannerLabel}>NEXT IN QUEUE</Text>
+                        <Text style={styles.upNextBannerTitle} numberOfLines={1}>{nextVideo.title}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
+                  </Pressable>
+                )}
+              </View>
+            </>
+          )}
+
+        </Animated.View>
+
+        {/* MINIMIZED DOCKED MINI PLAYER */}
+        <Animated.View
+          pointerEvents={minimizedState && !isLandscape && !drawerOpen ? 'auto' : 'none'}
+          style={[styles.miniPlayer, animatedMiniStyle]}
+        >
+          <GestureDetector gesture={miniPanGesture}>
+            <View style={{ flex: 1 }}>
+              {/* Mini Player Progress Bar */}
+              <View style={styles.miniProgBar} pointerEvents="none">
+                <View style={[styles.miniProgFill, { width: `${progPct}%` }]} pointerEvents="none" />
+              </View>
+              <Pressable onPress={expand} style={styles.miniInner}>
                 {video.thumb ? (
                   <Image source={{ uri: video.thumb }} style={styles.miniThumb} />
                 ) : null}
@@ -1032,15 +1058,22 @@ function PlayerWindow({ video }: { video: Video }) {
                   <Text style={styles.miniTitle} numberOfLines={1}>{video.title}</Text>
                   <Text style={styles.miniSub} numberOfLines={1}>{video.channelTitle}</Text>
                 </View>
-                <Pressable hitSlop={14} onPress={() => setWantPlay(!playing)} style={styles.miniPlayBtn}>
+                <Pressable
+                  hitSlop={14}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setWantPlay(!playing);
+                  }}
+                  style={styles.miniPlayBtn}
+                >
                   <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.ink} style={!playing ? { marginLeft: 2 } : undefined} />
                 </Pressable>
-              </View>
-            </TouchableWithoutFeedback>
-          </Animated.View>
-
+              </Pressable>
+            </View>
+          </GestureDetector>
         </Animated.View>
-      </GestureDetector>
+
+      </Animated.View>
     </View>
   );
 }
