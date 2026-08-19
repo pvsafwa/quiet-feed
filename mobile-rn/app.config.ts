@@ -6,13 +6,13 @@ const config: ExpoConfig = {
   name: 'Quiet Feed',
   slug: 'quiet-feed',
   scheme: 'quietfeed',
-  version: '1.0.42',
+  version: '1.0.43',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   icon: './assets/icon.png',
   android: {
     package: 'app.quietfeed',
-    versionCode: 46,
+    versionCode: 47,
     adaptiveIcon: {
       foregroundImage: './assets/icon.png',
       backgroundColor: '#14120f',

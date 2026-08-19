@@ -581,7 +581,7 @@ function PlayerWindow({ video }: { video: Video }) {
   // Mini-player upward swipe gesture
   const miniPanGesture = Gesture.Pan()
     .enabled(!isLandscape)
-    .activeOffsetY([-10, 10])
+    .activeOffsetY([-8, 8])
     .failOffsetX([-20, 20])
     .onUpdate((e) => {
       translateY.value = Math.max(MIN_Y, Math.min(MAX_Y + e.translationY, MAX_Y));
@@ -594,24 +594,40 @@ function PlayerWindow({ video }: { video: Video }) {
       }
     });
 
-  // Expanded top header downward swipe gesture
-  const topBarPanGesture = Gesture.Pan()
+  // Unified downward drag pan gesture for the expanded player (header, video, and info)
+  const dragDownPanGesture = Gesture.Pan()
     .enabled(!isLandscape)
-    .activeOffsetY([-10, 10])
-    .failOffsetX([-20, 20])
+    .activeOffsetY(10)
+    .failOffsetY(-10)
     .onUpdate((e) => {
       if (e.translationY > 0) {
         translateY.value = Math.min(e.translationY, MAX_Y);
       }
     })
     .onEnd((e) => {
-      const threshold = MAX_Y / 3;
-      if (e.translationY > threshold || e.velocityY > 500) {
+      const threshold = MAX_Y / 4;
+      if (e.translationY > threshold || e.velocityY > 400) {
         runOnJS(minimize)();
       } else {
         runOnJS(expand)();
       }
     });
+
+  const toggleWantPlay = () => {
+    if (ended && autoPlayCountdown === null) {
+      handleReplay();
+    } else {
+      setWantPlay(prev => !prev);
+    }
+  };
+
+  const videoTapGesture = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd(() => {
+      runOnJS(toggleWantPlay)();
+    });
+
+  const videoGesture = Gesture.Exclusive(dragDownPanGesture, videoTapGesture);
 
   const animatedContainerStyle = useAnimatedStyle(() => {
     if (isLandscape) {
@@ -664,7 +680,7 @@ function PlayerWindow({ video }: { video: Video }) {
         >
           {/* Top Bar for Minimize, Drag & Close (Portrait only) */}
           {!isLandscape && (
-            <GestureDetector gesture={topBarPanGesture}>
+            <GestureDetector gesture={dragDownPanGesture}>
               <View style={[styles.topControlsBar, { paddingTop: Math.max(insets.top, 12) }]}>
                 <Pressable hitSlop={14} onPress={minimize} style={styles.topBtn}>
                   <Ionicons name="chevron-down" size={24} color={colors.ink} />
@@ -879,20 +895,22 @@ function PlayerWindow({ video }: { video: Video }) {
                 )}
               </Pressable>
             ) : (
-              /* PORTRAIT VIDEO OVERLAY */
-              <Pressable style={styles.videoOverlay} onPress={() => setWantPlay(!playing)}>
-                {ended && autoPlayCountdown === null ? (
-                  <Pressable style={styles.orb} onPress={handleReplay}>
-                    <Ionicons name="refresh" size={32} color={colors.onAccent} />
-                  </Pressable>
-                ) : !playing && autoPlayCountdown === null ? (
-                  <View style={styles.orb}>
-                    <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
-                  </View>
-                ) : (
-                  <View style={styles.transparentOverlay} />
-                )}
-              </Pressable>
+              /* PORTRAIT VIDEO OVERLAY (TAP TO PLAY/PAUSE, SWIPE DOWN TO MINIMIZE) */
+              <GestureDetector gesture={videoGesture}>
+                <View style={styles.videoOverlay}>
+                  {ended && autoPlayCountdown === null ? (
+                    <Pressable style={styles.orb} onPress={handleReplay}>
+                      <Ionicons name="refresh" size={32} color={colors.onAccent} />
+                    </Pressable>
+                  ) : !playing && autoPlayCountdown === null ? (
+                    <View style={styles.orb} pointerEvents="none">
+                      <Ionicons name="play" size={36} color={colors.onAccent} style={{ marginLeft: 4 }} />
+                    </View>
+                  ) : (
+                    <View style={styles.transparentOverlay} pointerEvents="none" />
+                  )}
+                </View>
+              </GestureDetector>
             )}
           </View>
 
@@ -1016,24 +1034,26 @@ function PlayerWindow({ video }: { video: Video }) {
                 </View>
               </View>
 
-              {/* Video Details Info */}
-              <View style={styles.info}>
-                <Text style={styles.title}>{video.title}</Text>
-                <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
-                
-                {hasNext && nextVideo && (
-                  <Pressable style={styles.upNextBanner} onPress={handlePlayNext}>
-                    <View style={styles.upNextBannerLeft}>
-                      <Ionicons name="play-forward-circle" size={22} color={colors.accent} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.upNextBannerLabel}>NEXT IN QUEUE</Text>
-                        <Text style={styles.upNextBannerTitle} numberOfLines={1}>{nextVideo.title}</Text>
+              {/* Video Details Info (SWIPE DOWN ON INFO MINIMIZES PLAYER) */}
+              <GestureDetector gesture={dragDownPanGesture}>
+                <View style={styles.info}>
+                  <Text style={styles.title}>{video.title}</Text>
+                  <Text style={styles.sub}>{video.channelTitle} · {ago(video.published)}</Text>
+                  
+                  {hasNext && nextVideo && (
+                    <Pressable style={styles.upNextBanner} onPress={handlePlayNext}>
+                      <View style={styles.upNextBannerLeft}>
+                        <Ionicons name="play-forward-circle" size={22} color={colors.accent} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.upNextBannerLabel}>NEXT IN QUEUE</Text>
+                          <Text style={styles.upNextBannerTitle} numberOfLines={1}>{nextVideo.title}</Text>
+                        </View>
                       </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
-                  </Pressable>
-                )}
-              </View>
+                      <Ionicons name="chevron-forward" size={18} color={colors.inkSoft} />
+                    </Pressable>
+                  )}
+                </View>
+              </GestureDetector>
             </>
           )}
 
