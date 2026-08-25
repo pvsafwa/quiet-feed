@@ -18,9 +18,16 @@ export const SHORT_MAX = 60;
 const errMsg = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong.');
 
 let _saveT: ReturnType<typeof setTimeout> | null = null;
+let _progLoadedFromServer = false;
 function debouncedSaveProg(prog: Prog) {
+  if (!_progLoadedFromServer) return; // Never overwrite server with empty/stale local data
   if (_saveT) clearTimeout(_saveT);
   _saveT = setTimeout(() => { api.putProgress(prog).catch((e) => console.warn('progress save failed', e)); }, 800);
+}
+function flushPendingSave(prog: Prog) {
+  if (!_progLoadedFromServer) return;
+  if (_saveT) { clearTimeout(_saveT); _saveT = null; }
+  api.putProgress(prog).catch((e) => console.warn('progress flush failed', e));
 }
 function savePrefs(s: { hideShorts: boolean; autoRefreshMins: number }) {
   AsyncStorage.setItem(PREFS_KEY, JSON.stringify({ hideShorts: s.hideShorts, autoRefreshMins: s.autoRefreshMins })).catch(() => {});
@@ -147,8 +154,9 @@ export const useStore = create<Store>((set, get) => ({
     saveLastPlayed(v, q, queueIdx);
   },
   closePlayer() {
-    set({ playerStartMinimized: true });
     get().commitProg();
+    set({ cur: null, playerStartMinimized: true, playerQueue: [], playerQueueIdx: -1 });
+    AsyncStorage.removeItem(LAST_PLAYED_KEY).catch(() => {});
   },
   playNext() {
     const { playerQueue, playerQueueIdx } = get();
@@ -265,7 +273,8 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async signOut() {
-    if (_saveT) clearTimeout(_saveT);
+    flushPendingSave(get().prog);
+    _progLoadedFromServer = false;
     await googleSignOut();
     try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch { /* */ }
     try { await AsyncStorage.removeItem(LAST_PLAYED_KEY); } catch { /* */ }
@@ -286,6 +295,7 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const { progress } = await api.getProgress();
       const norm = normProg(progress);
+      _progLoadedFromServer = true;
       set({ prog: norm, progV: get().progV + 1 });
 
       // If no cur video yet, check if there is a recently watched video in progress
@@ -348,7 +358,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   commitProg() { debouncedSaveProg(get().prog); set(s => ({ prog: { ...s.prog }, progV: s.progV + 1 })); },
-  persistProg() { debouncedSaveProg(get().prog); },
+  persistProg() { debouncedSaveProg(get().prog); set(s => ({ prog: { ...s.prog }, progV: s.progV + 1 })); },
 
   toast(msg, err = false) { set({ toastMsg: { msg, err, id: Date.now() } }); },
   showError(msg) { console.error('[Quiet Feed]', msg); set({ banner: msg }); },
@@ -598,7 +608,7 @@ export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
         channelId: '',
         channelTitle: p.channelTitle || '',
         channelThumb: '',
-        published: '',
+        published: p.t ? new Date(p.t).toISOString() : '',
         thumb: p.thumb || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
         seconds: p.d || 0,
       });

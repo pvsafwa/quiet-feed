@@ -10,7 +10,9 @@ import {
   Share,
   BackHandler,
   PanResponder,
+  Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +35,17 @@ import ExpoPip from '../../modules/expo-pip';
 const MINI_PLAYER_HEIGHT = 60;
 const TAB_BAR_HEIGHT = 56;
 const AUTO_PLAY_COUNTDOWN_SEC = 4;
+const QUALITY_KEY = 'qf_player_quality';
+
+export const QUALITY_OPTIONS = [
+  { id: 'auto', label: 'Auto (Recommended)', short: 'Auto' },
+  { id: 'hd1080', label: '1080p HD', short: '1080p' },
+  { id: 'hd720', label: '720p HD', short: '720p' },
+  { id: 'large', label: '480p', short: '480p' },
+  { id: 'medium', label: '360p', short: '360p' },
+  { id: 'small', label: '240p', short: '240p' },
+  { id: 'tiny', label: '144p', short: '144p' },
+];
 
 export function PlayerOverlay() {
   const cur = useStore(s => s.cur);
@@ -61,8 +74,23 @@ function PlayerWindow({ video }: { video: Video }) {
   const translateY = useSharedValue(playerStartMinimized ? MAX_Y : 0);
   const isMinimized = useSharedValue(playerStartMinimized);
   const [minimizedState, setMinimizedState] = useState(playerStartMinimized);
+  const minimizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [quality, setQuality] = useState<string>('auto');
+  const [qualityModalOpen, setQualityModalOpen] = useState(false);
+
+  // Load saved playback quality on mount
+  useEffect(() => {
+    AsyncStorage.getItem(QUALITY_KEY).then(saved => {
+      if (saved) setQuality(saved);
+    }).catch(() => {});
+  }, []);
 
   const expand = () => {
+    if (minimizeTimerRef.current) {
+      clearTimeout(minimizeTimerRef.current);
+      minimizeTimerRef.current = null;
+    }
     isMinimized.value = false;
     setMinimizedState(false);
     translateY.value = withSpring(MIN_Y, { damping: 22, stiffness: 220, mass: 0.8 });
@@ -73,8 +101,11 @@ function PlayerWindow({ video }: { video: Video }) {
       ExpoPip.setOrientationPortrait();
     }
     isMinimized.value = true;
-    setMinimizedState(true);
     translateY.value = withSpring(MAX_Y, { damping: 22, stiffness: 220, mass: 0.8 });
+    if (minimizeTimerRef.current) clearTimeout(minimizeTimerRef.current);
+    minimizeTimerRef.current = setTimeout(() => {
+      setMinimizedState(true);
+    }, 280);
   };
 
   // Expand immediately whenever openPlayer is called with playerStartMinimized: false
@@ -411,6 +442,9 @@ function PlayerWindow({ video }: { video: Video }) {
       if (autoPlayTimer.current) {
         clearInterval(autoPlayTimer.current);
       }
+      if (minimizeTimerRef.current) {
+        clearTimeout(minimizeTimerRef.current);
+      }
       useStore.getState().commitProg();
       ExpoPip.stopPlayback();
       ExpoPip.setOrientationPortrait();
@@ -486,6 +520,11 @@ function PlayerWindow({ video }: { video: Video }) {
       ExpoPip.updateVideoMetadata(video.title, video.channelTitle, video.seconds || 0);
       ExpoPip.setPlaybackState(true);
 
+      // Apply preferred playback quality
+      if (quality && quality !== 'auto') {
+        applyQuality(quality);
+      }
+
       // If resuming from a saved position that hadn't applied on initial mount
       const prRec = useStore.getState().prog.v[video.id];
       if (prRec && prRec.p > 2 && (!prRec.done || prRec.p < (prRec.d || 9999) * 0.95)) {
@@ -503,6 +542,39 @@ function PlayerWindow({ video }: { video: Video }) {
     setPlaying(false);
     if (state === 'paused') setWantPlay(false);
     ExpoPip.setPlaybackState(false);
+  };
+
+  const applyQuality = (qId: string) => {
+    try {
+      if (playerRef.current?.setPlaybackQuality) {
+        playerRef.current.setPlaybackQuality(qId);
+      }
+      const script = `
+        try {
+          if (window.player) {
+            if (typeof window.player.setPlaybackQuality === 'function') {
+              window.player.setPlaybackQuality(${JSON.stringify(qId)});
+            }
+            if (typeof window.player.setPlaybackQualityRange === 'function') {
+              window.player.setPlaybackQualityRange(${JSON.stringify(qId)}, ${JSON.stringify(qId)});
+            }
+          }
+        } catch(e) {}
+        true;
+      `;
+      (playerRef.current as any)?.injectJavaScript?.(script);
+    } catch (e) {
+      console.warn('applyQuality error', e);
+    }
+  };
+
+  const selectQuality = (qId: string) => {
+    setQuality(qId);
+    setQualityModalOpen(false);
+    applyQuality(qId);
+    AsyncStorage.setItem(QUALITY_KEY, qId).catch(() => {});
+    const opt = QUALITY_OPTIONS.find(o => o.id === qId);
+    useStore.getState().toast(`Quality: ${opt?.label || qId}`);
   };
 
   const toggleFullscreen = () => {
@@ -581,13 +653,14 @@ function PlayerWindow({ video }: { video: Video }) {
   // Mini-player upward swipe gesture
   const miniPanGesture = Gesture.Pan()
     .enabled(!isLandscape)
-    .activeOffsetY([-8, 8])
-    .failOffsetX([-20, 20])
+    .activeOffsetY([-6, 6])
+    .failOffsetX([-50, 50])
+    .cancelsTouchesInView(false)
     .onUpdate((e) => {
       translateY.value = Math.max(MIN_Y, Math.min(MAX_Y + e.translationY, MAX_Y));
     })
     .onEnd((e) => {
-      if (e.translationY < -40 || e.velocityY < -400) {
+      if (e.translationY < -35 || e.velocityY < -300) {
         runOnJS(expand)();
       } else {
         runOnJS(minimize)();
@@ -596,16 +669,20 @@ function PlayerWindow({ video }: { video: Video }) {
 
   // Downward drag pan gesture for the expanded player
   const dragDownPanGesture = Gesture.Pan()
-    .enabled(!isLandscape && !minimizedState)
-    .activeOffsetY(12)
+    .enabled(!isLandscape && !minimizedState && !isScrubbing)
+    .activeOffsetY(16)
+    .failOffsetX([-40, 40])
+    .cancelsTouchesInView(false)
     .onUpdate((e) => {
+      if (isScrubbingRef.current) return;
       if (e.translationY > 0) {
         translateY.value = Math.min(e.translationY, MAX_Y);
       }
     })
     .onEnd((e) => {
+      if (isScrubbingRef.current) return;
       const threshold = MAX_Y / 4;
-      if (e.translationY > threshold || e.velocityY > 400) {
+      if (e.translationY > threshold || e.velocityY > 350) {
         runOnJS(minimize)();
       } else {
         runOnJS(expand)();
@@ -864,6 +941,14 @@ function PlayerWindow({ video }: { video: Video }) {
                           </Pressable>
                           <Pressable
                             hitSlop={12}
+                            onPress={() => { setQualityModalOpen(true); resetHideTimer(); }}
+                            style={[styles.hudIconBtn, quality !== 'auto' && { backgroundColor: 'rgba(235, 120, 39, 0.3)', borderRadius: 6 }]}
+                            accessibilityLabel="Video Quality"
+                          >
+                            <Ionicons name="settings-outline" size={20} color={quality !== 'auto' ? colors.accent : '#fff'} />
+                          </Pressable>
+                          <Pressable
+                            hitSlop={12}
                             onPress={toggleVideoFitMode}
                             style={styles.hudIconBtn}
                             accessibilityLabel={videoFitMode === 'fit' ? 'Zoom to Fill' : 'Fit to Screen (Original 16:9)'}
@@ -978,7 +1063,7 @@ function PlayerWindow({ video }: { video: Video }) {
                     {/* ROW 2: SECONDARY UTILITY ACTIONS */}
                     <View style={styles.utilityRow}>
                       <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
-                        <Ionicons name="expand-outline" size={15} color={colors.inkSoft} />
+                        <Ionicons name="expand-outline" size={14} color={colors.inkSoft} />
                         <Text style={styles.utilityLabel} numberOfLines={1}>Fullscreen</Text>
                       </Pressable>
 
@@ -989,7 +1074,7 @@ function PlayerWindow({ video }: { video: Video }) {
                       >
                         <Ionicons
                           name="logo-closed-captioning"
-                          size={15}
+                          size={14}
                           color={captionsOn ? colors.accent : colors.inkSoft}
                         />
                         <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
@@ -997,15 +1082,30 @@ function PlayerWindow({ video }: { video: Video }) {
                         </Text>
                       </Pressable>
 
+                      <Pressable
+                        style={[styles.utilityBtn, quality !== 'auto' && styles.utilityBtnActive]}
+                        onPress={() => setQualityModalOpen(true)}
+                        accessibilityLabel="Video Quality"
+                      >
+                        <Ionicons
+                          name="settings-outline"
+                          size={14}
+                          color={quality !== 'auto' ? colors.accent : colors.inkSoft}
+                        />
+                        <Text style={[styles.utilityLabel, quality !== 'auto' && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
+                          {QUALITY_OPTIONS.find(o => o.id === quality)?.short || 'Auto'}
+                        </Text>
+                      </Pressable>
+
                       <Pressable style={styles.utilityBtn} onPress={handleShare}>
-                        <Ionicons name="share-social-outline" size={15} color={colors.inkSoft} />
+                        <Ionicons name="share-social-outline" size={14} color={colors.inkSoft} />
                         <Text style={styles.utilityLabel} numberOfLines={1}>Share</Text>
                       </Pressable>
 
                       <Pressable style={[styles.utilityBtn, done && styles.utilityBtnDoneActive]} onPress={toggleWatched}>
                         <Ionicons
                           name={done ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                          size={15}
+                          size={14}
                           color={done ? colors.good : colors.inkSoft}
                         />
                         <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]} numberOfLines={1}>
@@ -1068,10 +1168,58 @@ function PlayerWindow({ video }: { video: Video }) {
                 >
                   <Ionicons name={playing ? 'pause' : 'play'} size={24} color={colors.ink} style={!playing ? { marginLeft: 2 } : undefined} />
                 </Pressable>
+                <Pressable
+                  hitSlop={14}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    closePlayer();
+                  }}
+                  style={styles.miniCloseBtn}
+                  accessibilityLabel="Close Player"
+                >
+                  <Ionicons name="close" size={22} color={colors.inkSoft} />
+                </Pressable>
               </Pressable>
             </View>
           </GestureDetector>
         </Animated.View>
+
+        {/* QUALITY SELECTION MODAL */}
+        <Modal
+          visible={qualityModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setQualityModalOpen(false)}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setQualityModalOpen(false)}>
+            <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Quality for current video</Text>
+                <Pressable hitSlop={12} onPress={() => setQualityModalOpen(false)}>
+                  <Ionicons name="close" size={22} color={colors.ink} />
+                </Pressable>
+              </View>
+              <View style={styles.modalDivider} />
+              {QUALITY_OPTIONS.map(opt => {
+                const isSelected = quality === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    style={[styles.modalOption, isSelected && styles.modalOptionSelected]}
+                    onPress={() => selectQuality(opt.id)}
+                  >
+                    <Text style={[styles.modalOptionText, isSelected && styles.modalOptionTextSelected]}>
+                      {opt.label}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={20} color={colors.accent} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
 
       </Animated.View>
     </View>
@@ -1463,5 +1611,68 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg3,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 6,
+  },
+  miniCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.bg3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* QUALITY MODAL STYLES */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.bg2,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: colors.line,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: colors.line,
+    marginBottom: 8,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  modalOptionSelected: {
+    backgroundColor: 'rgba(235, 120, 39, 0.12)',
+  },
+  modalOptionText: {
+    fontSize: 15,
+    color: colors.ink,
+    fontWeight: '500',
+  },
+  modalOptionTextSelected: {
+    color: colors.accent,
+    fontWeight: '700',
   },
 });
