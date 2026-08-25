@@ -876,36 +876,32 @@ function PlayerWindow({ video }: { video: Video }) {
                         {/* Center Playback Controls in Landscape */}
                         <View style={styles.landscapeCenterControls}>
                           {hasPrev && (
-                            <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayPrev}>
-                              <Ionicons name="play-skip-back" size={26} color="#fff" />
-                              <Text style={styles.landscapeCenterLabel}>Prev</Text>
+                            <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayPrev} accessibilityLabel="Previous">
+                              <Ionicons name="play-skip-back" size={28} color="#fff" />
                             </Pressable>
                           )}
 
-                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(-10)}>
-                            <Ionicons name="play-back" size={30} color="#fff" />
-                            <Text style={styles.landscapeCenterLabel}>-10s</Text>
+                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(-10)} accessibilityLabel="Rewind 10 seconds">
+                            <Ionicons name="play-back" size={32} color="#fff" />
                           </Pressable>
 
                           {ended && autoPlayCountdown === null ? (
-                            <Pressable style={styles.landscapePlayOrb} onPress={handleReplay}>
+                            <Pressable style={styles.landscapePlayOrb} onPress={handleReplay} accessibilityLabel="Replay">
                               <Ionicons name="refresh" size={38} color="#fff" />
                             </Pressable>
                           ) : (
-                            <Pressable style={styles.landscapePlayOrb} onPress={() => { setWantPlay(!playing); resetHideTimer(); }}>
+                            <Pressable style={styles.landscapePlayOrb} onPress={() => { setWantPlay(!playing); resetHideTimer(); }} accessibilityLabel={playing ? "Pause" : "Play"}>
                               <Ionicons name={playing ? 'pause' : 'play'} size={40} color="#fff" style={!playing ? { marginLeft: 3 } : undefined} />
                             </Pressable>
                           )}
 
-                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(10)}>
-                            <Ionicons name="play-forward" size={30} color="#fff" />
-                            <Text style={styles.landscapeCenterLabel}>+10s</Text>
+                          <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={() => handleSeekOffset(10)} accessibilityLabel="Forward 10 seconds">
+                            <Ionicons name="play-forward" size={32} color="#fff" />
                           </Pressable>
 
                           {hasNext && (
-                            <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayNext}>
-                              <Ionicons name="play-skip-forward" size={26} color="#fff" />
-                              <Text style={styles.landscapeCenterLabel}>Next</Text>
+                            <Pressable hitSlop={14} style={styles.landscapeCenterBtn} onPress={handlePlayNext} accessibilityLabel="Next">
+                              <Ionicons name="play-skip-forward" size={28} color="#fff" />
                             </Pressable>
                           )}
                         </View>
@@ -1014,23 +1010,20 @@ function PlayerWindow({ video }: { video: Video }) {
                     {/* ROW 1: PRIMARY PLAYBACK CONTROLS */}
                     <View style={styles.playbackRow}>
                       {hasPrev ? (
-                        <Pressable style={styles.primaryActionBtn} onPress={handlePlayPrev}>
-                          <Ionicons name="play-skip-back" size={22} color={colors.ink} />
-                          <Text style={styles.primaryActionLabel}>Prev</Text>
+                        <Pressable style={styles.primaryActionBtn} onPress={handlePlayPrev} accessibilityLabel="Previous">
+                          <Ionicons name="play-skip-back" size={24} color={colors.ink} />
                         </Pressable>
                       ) : (
-                        <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
-                          <Ionicons name="refresh" size={22} color={colors.ink} />
-                          <Text style={styles.primaryActionLabel}>Restart</Text>
+                        <Pressable style={styles.primaryActionBtn} onPress={handleReplay} accessibilityLabel="Restart">
+                          <Ionicons name="refresh" size={24} color={colors.ink} />
                         </Pressable>
                       )}
 
-                      <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(-10)}>
-                        <Ionicons name="play-back" size={24} color={colors.ink} />
-                        <Text style={styles.primaryActionLabel}>-10s</Text>
+                      <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(-10)} accessibilityLabel="Rewind 10 seconds">
+                        <Ionicons name="play-back" size={26} color={colors.ink} />
                       </Pressable>
 
-                      <Pressable style={styles.playPauseOrb} onPress={() => setWantPlay(!playing)}>
+                      <Pressable style={styles.playPauseOrb} onPress={() => setWantPlay(!playing)} accessibilityLabel={playing ? "Pause" : "Play"}>
                         <Ionicons
                           name={playing ? 'pause' : 'play'}
                           size={28}
@@ -1039,20 +1032,17 @@ function PlayerWindow({ video }: { video: Video }) {
                         />
                       </Pressable>
 
-                      <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(10)}>
-                        <Ionicons name="play-forward" size={24} color={colors.ink} />
-                        <Text style={styles.primaryActionLabel}>+10s</Text>
+                      <Pressable style={styles.primaryActionBtn} onPress={() => handleSeekOffset(10)} accessibilityLabel="Forward 10 seconds">
+                        <Ionicons name="play-forward" size={26} color={colors.ink} />
                       </Pressable>
 
                       {hasNext ? (
-                        <Pressable style={styles.primaryActionBtn} onPress={handlePlayNext}>
-                          <Ionicons name="play-skip-forward" size={22} color={colors.accent} />
-                          <Text style={[styles.primaryActionLabel, { color: colors.accent, fontWeight: '700' }]}>Next</Text>
+                        <Pressable style={styles.primaryActionBtn} onPress={handlePlayNext} accessibilityLabel="Next">
+                          <Ionicons name="play-skip-forward" size={24} color={colors.accent} />
                         </Pressable>
                       ) : (
-                        <Pressable style={styles.primaryActionBtn} onPress={handleReplay}>
-                          <Ionicons name="refresh" size={22} color={colors.inkSoft} />
-                          <Text style={styles.primaryActionLabel}>Replay</Text>
+                        <Pressable style={styles.primaryActionBtn} onPress={handleReplay} accessibilityLabel="Replay">
+                          <Ionicons name="refresh" size={24} color={colors.inkSoft} />
                         </Pressable>
                       )}
                     </View>
@@ -1062,9 +1052,8 @@ function PlayerWindow({ video }: { video: Video }) {
 
                     {/* ROW 2: SECONDARY UTILITY ACTIONS */}
                     <View style={styles.utilityRow}>
-                      <Pressable style={styles.utilityBtn} onPress={toggleFullscreen}>
-                        <Ionicons name="expand-outline" size={14} color={colors.inkSoft} />
-                        <Text style={styles.utilityLabel} numberOfLines={1}>Fullscreen</Text>
+                      <Pressable style={styles.utilityBtn} onPress={toggleFullscreen} accessibilityLabel="Fullscreen">
+                        <Ionicons name="expand-outline" size={18} color={colors.inkSoft} />
                       </Pressable>
 
                       <Pressable
@@ -1074,12 +1063,9 @@ function PlayerWindow({ video }: { video: Video }) {
                       >
                         <Ionicons
                           name="logo-closed-captioning"
-                          size={14}
+                          size={18}
                           color={captionsOn ? colors.accent : colors.inkSoft}
                         />
-                        <Text style={[styles.utilityLabel, captionsOn && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
-                          {captionsOn ? 'CC On' : 'CC Off'}
-                        </Text>
                       </Pressable>
 
                       <Pressable
@@ -1089,28 +1075,21 @@ function PlayerWindow({ video }: { video: Video }) {
                       >
                         <Ionicons
                           name="settings-outline"
-                          size={14}
+                          size={18}
                           color={quality !== 'auto' ? colors.accent : colors.inkSoft}
                         />
-                        <Text style={[styles.utilityLabel, quality !== 'auto' && { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>
-                          {QUALITY_OPTIONS.find(o => o.id === quality)?.short || 'Auto'}
-                        </Text>
                       </Pressable>
 
-                      <Pressable style={styles.utilityBtn} onPress={handleShare}>
-                        <Ionicons name="share-social-outline" size={14} color={colors.inkSoft} />
-                        <Text style={styles.utilityLabel} numberOfLines={1}>Share</Text>
+                      <Pressable style={styles.utilityBtn} onPress={handleShare} accessibilityLabel="Share">
+                        <Ionicons name="share-social-outline" size={18} color={colors.inkSoft} />
                       </Pressable>
 
-                      <Pressable style={[styles.utilityBtn, done && styles.utilityBtnDoneActive]} onPress={toggleWatched}>
+                      <Pressable style={[styles.utilityBtn, done && styles.utilityBtnDoneActive]} onPress={toggleWatched} accessibilityLabel={done ? "Mark Unwatched" : "Mark Watched"}>
                         <Ionicons
                           name={done ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                          size={14}
+                          size={18}
                           color={done ? colors.good : colors.inkSoft}
                         />
-                        <Text style={[styles.utilityLabel, done && { color: colors.good, fontWeight: '700' }]} numberOfLines={1}>
-                          Done
-                        </Text>
                       </Pressable>
                     </View>
                   </View>
@@ -1502,15 +1481,10 @@ const styles = StyleSheet.create({
   primaryActionBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    gap: 3,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     minWidth: 48,
-  },
-  primaryActionLabel: {
-    color: colors.inkSoft,
-    fontSize: 11,
-    fontWeight: '600',
+    minHeight: 48,
   },
   playPauseOrb: {
     width: 52,
@@ -1535,17 +1509,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 6,
-    paddingVertical: 2,
+    gap: 8,
+    paddingVertical: 4,
   },
   utilityBtn: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 7,
-    paddingHorizontal: 2,
+    paddingVertical: 10,
     borderRadius: radius.pill,
     backgroundColor: colors.bg3,
   },
@@ -1554,11 +1525,6 @@ const styles = StyleSheet.create({
   },
   utilityBtnDoneActive: {
     backgroundColor: 'rgba(95, 181, 106, 0.15)',
-  },
-  utilityLabel: {
-    color: colors.inkSoft,
-    fontSize: 11.5,
-    fontWeight: '600',
   },
 
   info: { padding: 18 },
