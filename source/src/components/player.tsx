@@ -243,19 +243,29 @@ export function PlayerModal() {
   const startDownload = async (qualityId: string) => {
     if (!cur) return;
     setDownloading(true);
+    useStore.getState().toast('Preparing video download, please wait...');
     try {
-      useStore.getState().toast('Preparing download, please wait...');
       const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+      const res = await fetch(streamUrl);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Download failed' }));
+        throw new Error(errData.error || `Download failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = streamUrl;
-      link.setAttribute('download', `${cur.title || cur.id}_${qualityId}.${qualityId === 'audio' ? 'mp3' : 'mp4'}`);
+      link.href = blobUrl;
+      const ext = qualityId === 'audio' ? 'mp3' : 'mp4';
+      link.download = `${cur.title || cur.id}_${qualityId}.${ext}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      useStore.getState().toast('Download started!');
       setDownloadModalOpen(false);
-    } catch {
-      useStore.getState().toast('Download failed: video stream unavailable');
-      setDownloadModalOpen(false);
+    } catch (err: any) {
+      useStore.getState().toast(err.message || 'Download failed');
     } finally {
       setDownloading(false);
     }

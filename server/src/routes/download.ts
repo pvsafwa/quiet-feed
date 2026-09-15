@@ -76,16 +76,16 @@ downloadRouter.get(
     const tempDir = os.tmpdir();
     const tempFile = path.join(tempDir, `qf_${videoId}_${Date.now()}.${ext}`);
 
-    let formatSelector = 'bestaudio[ext=m4a]/bestaudio/140/251/best';
+    let formatSelector = '140/bestaudio[ext=m4a]/bestaudio/best';
     if (!isAudio) {
       if (cleanQuality === '1080') {
-        formatSelector = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        formatSelector = 'bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
       } else if (cleanQuality === '480') {
-        formatSelector = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/best';
+        formatSelector = 'b[height<=480][ext=mp4]/b[height<=480]/bestvideo[height<=480]+bestaudio/best';
       } else if (cleanQuality === '360') {
-        formatSelector = 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
+        formatSelector = '18/b[height<=360][ext=mp4]/b[height<=360]/bestvideo[height<=360]+bestaudio/best';
       } else {
-        formatSelector = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
+        formatSelector = '22/b[height<=720][ext=mp4]/b[height<=720]/bestvideo[height<=720]+bestaudio/best';
       }
     }
 
@@ -93,12 +93,10 @@ downloadRouter.get(
       await execFileAsync(
         bin,
         [
-          '--js-runtimes',
-          'node:node',
+          '--extractor-args',
+          'youtube:player_client=ios,android',
           '-f',
           formatSelector,
-          '--merge-output-format',
-          isAudio ? 'mp3' : 'mp4',
           '-o',
           tempFile,
           `https://www.youtube.com/watch?v=${videoId}`,
