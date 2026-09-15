@@ -246,7 +246,7 @@ export function PlayerModal() {
     try {
       useStore.getState().toast('Preparing download...');
       const res = await api.downloadUrl(cur.id, qualityId).catch(() => null);
-      if (res && res.url && res.url.startsWith('http') && !res.url.includes('youtube.com/watch')) {
+      if (res && res.url && res.url.startsWith('http') && !res.url.includes('youtube.com')) {
         const link = document.createElement('a');
         link.href = res.url;
         link.download = res.filename || `${cur.id}.${res.isAudio ? 'mp3' : 'mp4'}`;
@@ -256,7 +256,7 @@ export function PlayerModal() {
         document.body.removeChild(link);
         useStore.getState().toast('Download started');
       } else {
-        const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+        const streamUrl = res?.url?.startsWith('/') ? res.url : `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
         const link = document.createElement('a');
         link.href = streamUrl;
         link.setAttribute('download', `${cur.title || cur.id}.${qualityId === 'audio' ? 'mp3' : 'mp4'}`);
@@ -267,8 +267,7 @@ export function PlayerModal() {
       }
       setDownloadModalOpen(false);
     } catch {
-      const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
-      window.open(streamUrl, '_blank');
+      useStore.getState().toast('Download failed: video stream unavailable');
       setDownloadModalOpen(false);
     } finally {
       setDownloading(false);

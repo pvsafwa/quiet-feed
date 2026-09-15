@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import https from 'https';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { asyncHandler } from '../http/async';
 import { requireAuth } from '../auth/middleware';
 
@@ -18,30 +20,61 @@ interface DownloadResolution {
   isAudio: boolean;
 }
 
-// Memory cache for resolved download URLs (expire after 3 hours)
+// Memory cache for resolved download URLs (expire after 2 hours)
 const urlCache = new Map<string, { res: DownloadResolution; expires: number }>();
+
+function getYtDlpBin(): string {
+  const candidates = [
+    process.env.YT_DLP_PATH,
+    path.resolve(__dirname, '../../bin/yt-dlp'),
+    path.resolve(__dirname, '../bin/yt-dlp'),
+    '/opt/homebrew/bin/yt-dlp',
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+    'yt-dlp',
+  ].filter(Boolean) as string[];
+
+  for (const p of candidates) {
+    if (p === 'yt-dlp' || fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return 'yt-dlp';
+}
 
 async function resolveViaYtDlp(videoId: string, quality: string): Promise<DownloadResolution | null> {
   const isAudio = quality === 'audio' || quality === 'mp3';
-  let formatSelector = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best';
-  if (isAudio) {
-    formatSelector = 'bestaudio[ext=m4a]/bestaudio/best';
-  } else if (quality === '1080' || quality === '1080p') {
-    formatSelector = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best';
-  } else if (quality === '480' || quality === '480p') {
-    formatSelector = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]/best';
-  } else if (quality === '360' || quality === '360p') {
-    formatSelector = 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]/best';
+  const cleanQuality = quality.replace('p', '');
+
+  let formatSelector = 'bestaudio[ext=m4a]/bestaudio/140/251/best';
+  if (!isAudio) {
+    if (cleanQuality === '1080') {
+      formatSelector = 'b[height<=1080][ext=mp4]/b[height<=1080]/bestvideo[height<=1080]+bestaudio/best';
+    } else if (cleanQuality === '480') {
+      formatSelector = 'b[height<=480][ext=mp4]/b[height<=480]/bestvideo[height<=480]+bestaudio/best';
+    } else if (cleanQuality === '360') {
+      formatSelector = 'b[height<=360][ext=mp4]/b[height<=360]/bestvideo[height<=360]+bestaudio/best';
+    } else {
+      formatSelector = 'b[height<=720][ext=mp4]/b[height<=720]/bestvideo[height<=720]+bestaudio/best';
+    }
   }
 
+  const bin = getYtDlpBin();
   try {
     const { stdout } = await execFileAsync(
-      'yt-dlp',
-      ['-g', '-f', formatSelector, `https://www.youtube.com/watch?v=${videoId}`],
-      { timeout: 15000 }
+      bin,
+      [
+        '--js-runtimes',
+        'node:node',
+        '-g',
+        '-f',
+        formatSelector,
+        `https://www.youtube.com/watch?v=${videoId}`,
+      ],
+      { timeout: 20000 },
     );
     const urls = stdout.trim().split('\n').filter(Boolean);
-    if (urls.length > 0) {
+    if (urls.length > 0 && urls[0].startsWith('http')) {
       const ext = isAudio ? 'mp3' : 'mp4';
       return {
         url: urls[0],
@@ -50,86 +83,58 @@ async function resolveViaYtDlp(videoId: string, quality: string): Promise<Downlo
       };
     }
   } catch (err) {
-    // yt-dlp not available or failed
+    // yt-dlp execution error or timeout
   }
   return null;
 }
 
-async function resolveViaCobalt(videoId: string, quality: string): Promise<DownloadResolution | null> {
-  const isAudio = quality === 'audio' || quality === 'mp3';
+function spawnYtDlpStream(videoId: string, quality: string, isAudio: boolean, res: any) {
+  const bin = getYtDlpBin();
   const cleanQuality = quality.replace('p', '');
-  const body = JSON.stringify({
-    url: `https://www.youtube.com/watch?v=${videoId}`,
-    videoQuality: isAudio ? '720' : ['1080', '720', '480', '360'].includes(cleanQuality) ? cleanQuality : '720',
-    downloadMode: isAudio ? 'audio' : 'auto',
-    audioFormat: 'mp3',
+  const formatSelector = isAudio
+    ? 'bestaudio[ext=m4a]/bestaudio/140/251/best'
+    : `b[height<=${cleanQuality}][ext=mp4]/b[height<=${cleanQuality}]/b/best`;
+
+  const proc = spawn(
+    bin,
+    [
+      '--js-runtimes',
+      'node:node',
+      '-f',
+      formatSelector,
+      '-o',
+      '-',
+      `https://www.youtube.com/watch?v=${videoId}`,
+    ],
+    {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    },
+  );
+
+  proc.stdout.pipe(res);
+
+  proc.on('error', () => {
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Failed to stream video download' });
+    }
   });
 
-  return new Promise((resolve) => {
-    const req = https.request(
-      'https://api.cobalt.tools/',
-      {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'User-Agent': 'QuietFeed/1.0',
-        },
-        timeout: 10000,
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.url) {
-              const ext = isAudio ? 'mp3' : 'mp4';
-              resolve({
-                url: json.url,
-                filename: json.filename || `${videoId}_${quality}.${ext}`,
-                isAudio,
-              });
-              return;
-            }
-          } catch {}
-          resolve(null);
-        });
-      }
-    );
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
-    req.write(body);
-    req.end();
+  res.on('close', () => {
+    proc.kill('SIGKILL');
   });
 }
 
-async function getDownloadResolution(videoId: string, quality: string): Promise<DownloadResolution> {
+async function getDownloadResolution(videoId: string, quality: string): Promise<DownloadResolution | null> {
   const cacheKey = `${videoId}:${quality}`;
   const cached = urlCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     return cached.res;
   }
 
-  // 1. Try yt-dlp first
-  let resolved = await resolveViaYtDlp(videoId, quality);
-
-  // 2. Fallback to Cobalt API
-  if (!resolved) {
-    resolved = await resolveViaCobalt(videoId, quality);
+  const resolved = await resolveViaYtDlp(videoId, quality);
+  if (resolved) {
+    urlCache.set(cacheKey, { res: resolved, expires: Date.now() + 2 * 3600 * 1000 });
   }
-
-  if (!resolved) {
-    // 3. Fallback: direct YouTube redirect for mobile/external player
-    const isAudio = quality === 'audio' || quality === 'mp3';
-    resolved = {
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      filename: `${videoId}.${isAudio ? 'mp3' : 'mp4'}`,
-      isAudio,
-    };
-  }
-
-  urlCache.set(cacheKey, { res: resolved, expires: Date.now() + 3 * 3600 * 1000 });
   return resolved;
 }
 
@@ -147,6 +152,16 @@ downloadRouter.get(
     const quality = String(req.query.quality || '720');
     try {
       const resolution = await getDownloadResolution(videoId, quality);
+      if (!resolution) {
+        // Return stream URL fallback so client triggers stream endpoint directly
+        const isAudio = quality === 'audio' || quality === 'mp3';
+        res.json({
+          url: `/api/videos/${encodeURIComponent(videoId)}/download-stream?quality=${encodeURIComponent(quality)}`,
+          filename: `${videoId}_${quality}.${isAudio ? 'mp3' : 'mp4'}`,
+          isAudio,
+        });
+        return;
+      }
       res.json(resolution);
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to resolve download URL' });
@@ -154,7 +169,7 @@ downloadRouter.get(
   }),
 );
 
-// Stream video download directly to client as an attachment (avoids CORS)
+// Stream video download directly to client as an attachment
 downloadRouter.get(
   '/:id/download-stream',
   requireAuth,
@@ -166,33 +181,37 @@ downloadRouter.get(
     }
 
     const quality = String(req.query.quality || '720');
+    const isAudio = quality === 'audio' || quality === 'mp3';
+    const ext = isAudio ? 'mp3' : 'mp4';
+    const filename = `${videoId}_${quality}.${ext}`;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
+
     const resolution = await getDownloadResolution(videoId, quality);
+    if (
+      resolution &&
+      resolution.url &&
+      resolution.url.startsWith('https://') &&
+      !resolution.url.includes('youtube.com/watch')
+    ) {
+      const client = resolution.url.startsWith('https') ? https : http;
+      const proxyReq = client.get(resolution.url, (streamRes) => {
+        if (streamRes.statusCode && streamRes.statusCode >= 400) {
+          spawnYtDlpStream(videoId, quality, isAudio, res);
+          return;
+        }
+        if (streamRes.headers['content-length']) {
+          res.setHeader('Content-Length', streamRes.headers['content-length']);
+        }
+        streamRes.pipe(res);
+      });
 
-    // If resolution.url is an external watch page, redirect
-    if (resolution.url.includes('youtube.com/watch')) {
-      res.redirect(resolution.url);
-      return;
+      proxyReq.on('error', () => {
+        spawnYtDlpStream(videoId, quality, isAudio, res);
+      });
+    } else {
+      spawnYtDlpStream(videoId, quality, isAudio, res);
     }
-
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(resolution.filename)}"`);
-    res.setHeader('Content-Type', resolution.isAudio ? 'audio/mpeg' : 'video/mp4');
-
-    const client = resolution.url.startsWith('https') ? https : http;
-    const proxyReq = client.get(resolution.url, (streamRes) => {
-      if (streamRes.statusCode && streamRes.statusCode >= 400) {
-        res.status(streamRes.statusCode).end();
-        return;
-      }
-      if (streamRes.headers['content-length']) {
-        res.setHeader('Content-Length', streamRes.headers['content-length']);
-      }
-      streamRes.pipe(res);
-    });
-
-    proxyReq.on('error', () => {
-      if (!res.headersSent) {
-        res.status(502).json({ error: 'Failed to stream download' });
-      }
-    });
   }),
 );

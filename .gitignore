@@ -13,3 +13,4 @@ dist/
 *.jks
 google-services.json
 *.apk
+server/bin/
