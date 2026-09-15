@@ -244,27 +244,14 @@ export function PlayerModal() {
     if (!cur) return;
     setDownloading(true);
     try {
-      useStore.getState().toast('Preparing download...');
-      const res = await api.downloadUrl(cur.id, qualityId).catch(() => null);
-      if (res && res.url && res.url.startsWith('http') && !res.url.includes('youtube.com')) {
-        const link = document.createElement('a');
-        link.href = res.url;
-        link.download = res.filename || `${cur.id}.${res.isAudio ? 'mp3' : 'mp4'}`;
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        useStore.getState().toast('Download started');
-      } else {
-        const streamUrl = res?.url?.startsWith('/') ? res.url : `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
-        const link = document.createElement('a');
-        link.href = streamUrl;
-        link.setAttribute('download', `${cur.title || cur.id}.${qualityId === 'audio' ? 'mp3' : 'mp4'}`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        useStore.getState().toast('Download started');
-      }
+      useStore.getState().toast('Preparing download, please wait...');
+      const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+      const link = document.createElement('a');
+      link.href = streamUrl;
+      link.setAttribute('download', `${cur.title || cur.id}_${qualityId}.${qualityId === 'audio' ? 'mp3' : 'mp4'}`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       setDownloadModalOpen(false);
     } catch {
       useStore.getState().toast('Download failed: video stream unavailable');
