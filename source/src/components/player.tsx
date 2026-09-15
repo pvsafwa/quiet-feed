@@ -241,20 +241,41 @@ export function PlayerModal() {
 
   const [downloadingQuality, setDownloadingQuality] = useState<string | null>(null);
 
-  const startDownload = (qualityId: string) => {
+  const startDownload = async (qualityId: string) => {
     if (!cur) return;
     setDownloadingQuality(qualityId);
-    useStore.getState().toast('Download started! Generating media file...');
-    const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
-    const link = document.createElement('a');
-    link.href = streamUrl;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => {
-      setDownloadingQuality(null);
+    useStore.getState().toast('Generating media file on server, please wait...');
+    try {
+      const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+      const res = await fetch(streamUrl);
+      if (!res.ok) {
+        let errDetail = `Download failed (HTTP ${res.status})`;
+        try {
+          const json = await res.json();
+          if (json.error) errDetail = json.error;
+        } catch {}
+        throw new Error(errDetail);
+      }
+      useStore.getState().toast('File ready! Saving to your device...');
+      const blob = await res.blob();
+      const ext = qualityId === 'audio' || qualityId === 'mp3' ? 'mp3' : 'mp4';
+      const cleanTitle = (cur.title || cur.id).replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_').substring(0, 60);
+      const filename = `${cleanTitle || cur.id}_${qualityId}.${ext}`;
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
       setDownloadModalOpen(false);
-    }, 1500);
+    } catch (err: any) {
+      console.error('Download error:', err);
+      useStore.getState().toast(err.message || 'Download failed');
+    } finally {
+      setDownloadingQuality(null);
+    }
   };
   function stopTick() {
     if (tickRef.current) {
@@ -1004,7 +1025,7 @@ export function PlayerModal() {
                           fontWeight: 600,
                         }}
                       >
-                        <span>{isThis ? 'Starting download...' : opt.label}</span>
+                        <span>{isThis ? 'Generating file...' : opt.label}</span>
                         <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: 'var(--accent-alpha, rgba(220, 38, 38, 0.2))', color: 'var(--accent, #e53e3e)' }}>
                           {opt.format}
                         </span>

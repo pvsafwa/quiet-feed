@@ -14,3 +14,6 @@ dist/
 google-services.json
 *.apk
 server/bin/
+cookies.txt
+cookies/*.txt
+!cookies/.gitkeep

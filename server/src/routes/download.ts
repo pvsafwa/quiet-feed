@@ -18,9 +18,9 @@ function getYtDlpBin(): string {
     process.env.YT_DLP_PATH,
     path.resolve(__dirname, '../../bin/yt-dlp'),
     path.resolve(__dirname, '../bin/yt-dlp'),
-    '/opt/homebrew/bin/yt-dlp',
     '/usr/local/bin/yt-dlp',
     '/usr/bin/yt-dlp',
+    '/opt/homebrew/bin/yt-dlp',
     'yt-dlp',
   ].filter(Boolean) as string[];
 
@@ -30,6 +30,30 @@ function getYtDlpBin(): string {
     }
   }
   return 'yt-dlp';
+}
+
+function findCookiesFile(): string | null {
+  const candidates = [
+    process.env.YOUTUBE_COOKIES_PATH,
+    '/app/cookies/cookies.txt',
+    '/app/cookies.txt',
+    '/app/data/cookies.txt',
+    path.resolve(process.cwd(), 'cookies/cookies.txt'),
+    path.resolve(process.cwd(), 'cookies.txt'),
+    path.resolve(__dirname, '../../cookies/cookies.txt'),
+    path.resolve(__dirname, '../../cookies.txt'),
+    path.resolve(__dirname, '../../../cookies.txt'),
+    path.resolve(os.homedir(), '.config/yt-dlp/cookies.txt'),
+  ].filter(Boolean) as string[];
+
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c) && fs.statSync(c).isFile() && fs.statSync(c).size > 0) {
+        return c;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 // Get direct download URL for the requested quality
@@ -47,8 +71,13 @@ downloadRouter.get(
     const isAudio = quality === 'audio' || quality === 'mp3';
     const ext = isAudio ? 'mp3' : 'mp4';
 
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const streamPath = `/api/videos/${encodeURIComponent(videoId)}/download-stream?quality=${encodeURIComponent(quality)}`;
+    const fullUrl = host ? `${proto}://${host}${streamPath}` : streamPath;
+
     res.json({
-      url: `/api/videos/${encodeURIComponent(videoId)}/download-stream?quality=${encodeURIComponent(quality)}`,
+      url: fullUrl,
       filename: `${videoId}_${quality}.${ext}`,
       isAudio,
     });
@@ -74,59 +103,124 @@ downloadRouter.get(
 
     const bin = getYtDlpBin();
     const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, `qf_${videoId}_${Date.now()}.${ext}`);
+    const filePrefix = `qf_${videoId}_${Date.now()}`;
+    const targetFile = path.join(tempDir, `${filePrefix}.${ext}`);
+    const outputTemplate = path.join(tempDir, `${filePrefix}.%(ext)s`);
 
-    let formatSelector = '140/bestaudio[ext=m4a]/bestaudio/best';
-    if (!isAudio) {
-      if (cleanQuality === '1080') {
-        formatSelector = 'bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
-      } else if (cleanQuality === '480') {
-        formatSelector = 'b[height<=480][ext=mp4]/b[height<=480]/bestvideo[height<=480]+bestaudio/best';
-      } else if (cleanQuality === '360') {
-        formatSelector = '18/b[height<=360][ext=mp4]/b[height<=360]/bestvideo[height<=360]+bestaudio/best';
-      } else {
-        formatSelector = '22/b[height<=720][ext=mp4]/b[height<=720]/bestvideo[height<=720]+bestaudio/best';
+    const cookieFile = findCookiesFile();
+
+    const buildArgs = (clientStrategy: 'default' | 'tv') => {
+      const args = [
+        '--js-runtimes',
+        'node',
+        '--no-playlist',
+        '--no-warnings',
+        '--retries',
+        '3',
+      ];
+
+      if (cookieFile) {
+        args.push('--cookies', cookieFile);
       }
-    }
 
-    try {
-      await execFileAsync(
-        bin,
-        [
-          '--extractor-args',
-          'youtube:player_client=ios,android',
+      if (clientStrategy === 'default') {
+        args.push('--extractor-args', 'youtube:player_client=default,tv,web_creator');
+      } else if (clientStrategy === 'tv') {
+        args.push('--extractor-args', 'youtube:player_client=tv');
+      }
+
+      if (isAudio) {
+        args.push(
           '-f',
-          formatSelector,
-          '-o',
-          tempFile,
-          `https://www.youtube.com/watch?v=${videoId}`,
-        ],
-        { timeout: 120000 },
-      );
-
-      if (fs.existsSync(tempFile) && fs.statSync(tempFile).size > 0) {
-        res.download(tempFile, filename, () => {
-          try {
-            fs.unlinkSync(tempFile);
-          } catch {}
-        });
+          '140/bestaudio[ext=m4a]/bestaudio/best',
+          '-x',
+          '--audio-format',
+          'mp3',
+          '--audio-quality',
+          '0',
+        );
       } else {
-        if (fs.existsSync(tempFile)) {
+        let formatSelector = '22/b[height<=720][ext=mp4]/b[height<=720]/bestvideo[height<=720]+bestaudio/best';
+        if (cleanQuality === '1080') {
+          formatSelector = 'bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+        } else if (cleanQuality === '480') {
+          formatSelector = 'b[height<=480][ext=mp4]/b[height<=480]/bestvideo[height<=480]+bestaudio/best';
+        } else if (cleanQuality === '360') {
+          formatSelector = '18/b[height<=360][ext=mp4]/b[height<=360]/bestvideo[height<=360]+bestaudio/best';
+        }
+        args.push('-f', formatSelector, '--merge-output-format', 'mp4');
+      }
+
+      args.push('-o', outputTemplate, `https://www.youtube.com/watch?v=${videoId}`);
+      return args;
+    };
+
+    const cleanup = () => {
+      try {
+        const files = fs.readdirSync(tempDir).filter((f) => f.startsWith(filePrefix));
+        for (const f of files) {
           try {
-            fs.unlinkSync(tempFile);
+            fs.unlinkSync(path.join(tempDir, f));
           } catch {}
         }
-        res.status(502).json({ error: 'Failed to generate media file' });
+      } catch {}
+    };
+
+    const findResultFile = (): string | null => {
+      if (fs.existsSync(targetFile) && fs.statSync(targetFile).size > 0) {
+        return targetFile;
       }
+      try {
+        const files = fs.readdirSync(tempDir).filter((f) => f.startsWith(filePrefix));
+        for (const f of files) {
+          const fullPath = path.join(tempDir, f);
+          if (fs.statSync(fullPath).size > 0) {
+            return fullPath;
+          }
+        }
+      } catch {}
+      return null;
+    };
+
+    let executionError: any = null;
+
+    // First attempt: standard client combination
+    try {
+      await execFileAsync(bin, buildArgs('default'), { timeout: 180000 });
     } catch (err: any) {
-      if (fs.existsSync(tempFile)) {
-        try {
-          fs.unlinkSync(tempFile);
-        } catch {}
-      }
-      if (!res.headersSent) {
-        res.status(502).json({ error: err.message || 'Download processing failed' });
+      executionError = err;
+      console.warn(`[Download] Primary strategy failed for ${videoId}:`, err.message);
+
+      // Fallback attempt: TV client
+      try {
+        await execFileAsync(bin, buildArgs('tv'), { timeout: 180000 });
+        executionError = null;
+      } catch (fallbackErr: any) {
+        executionError = fallbackErr;
+        console.warn(`[Download] Fallback strategy failed for ${videoId}:`, fallbackErr.message);
       }
     }
+
+    const mediaFile = findResultFile();
+    if (mediaFile) {
+      res.download(mediaFile, filename, () => {
+        cleanup();
+      });
+      return;
+    }
+
+    cleanup();
+
+    const errMsg = executionError?.message || '';
+    if (errMsg.includes('Sign in to confirm you’re not a bot') || errMsg.includes('confirm you') || errMsg.includes('bot')) {
+      res.status(502).json({
+        error: 'YouTube requires bot verification for cloud servers. Please place a YouTube cookies.txt file in the cookies/ folder on your server.',
+      });
+      return;
+    }
+
+    res.status(502).json({
+      error: errMsg ? `Download failed: ${errMsg.split('\n')[0]}` : 'Failed to generate media file',
+    });
   }),
 );

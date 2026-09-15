@@ -706,6 +706,9 @@ function PlayerWindow({ video }: { video: Video }) {
       let downloadUrl = res?.url;
       if (!downloadUrl || downloadUrl.includes('youtube.com/watch')) {
         downloadUrl = `${API_URL}/videos/${encodeURIComponent(video.id)}/download-stream?quality=${qualityId}`;
+      } else if (downloadUrl.startsWith('/')) {
+        const baseUrl = API_URL.replace(/\/api$/, '');
+        downloadUrl = `${baseUrl}${downloadUrl}`;
       }
 
       useStore.getState().toast('Downloading to Downloads folder...');
