@@ -85,7 +85,6 @@ export function PlayerModal() {
   });
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
 
   const hasPrev = playerQueueIdx > 0;
@@ -240,35 +239,22 @@ export function PlayerModal() {
     }
   };
 
-  const startDownload = async (qualityId: string) => {
-    if (!cur) return;
-    setDownloading(true);
-    useStore.getState().toast('Preparing video download, please wait...');
-    try {
-      const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
-      const res = await fetch(streamUrl);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'Download failed' }));
-        throw new Error(errData.error || `Download failed (${res.status})`);
-      }
+  const [downloadingQuality, setDownloadingQuality] = useState<string | null>(null);
 
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      const ext = qualityId === 'audio' ? 'mp3' : 'mp4';
-      link.download = `${cur.title || cur.id}_${qualityId}.${ext}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-      useStore.getState().toast('Download started!');
+  const startDownload = (qualityId: string) => {
+    if (!cur) return;
+    setDownloadingQuality(qualityId);
+    useStore.getState().toast('Download started! Generating media file...');
+    const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+    const link = document.createElement('a');
+    link.href = streamUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => {
+      setDownloadingQuality(null);
       setDownloadModalOpen(false);
-    } catch (err: any) {
-      useStore.getState().toast(err.message || 'Download failed');
-    } finally {
-      setDownloading(false);
-    }
+    }, 1500);
   };
   function stopTick() {
     if (tickRef.current) {
@@ -997,31 +983,34 @@ export function PlayerModal() {
                   Select quality to download:
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {DOWNLOAD_OPTIONS.map(opt => (
-                    <button
-                      key={opt.id}
-                      disabled={downloading}
-                      onClick={() => startDownload(opt.id)}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '12px 16px',
-                        borderRadius: 8,
-                        background: 'var(--bg-elevated, #2a2a2a)',
-                        border: '1px solid var(--border, #3a3a3a)',
-                        color: 'inherit',
-                        cursor: downloading ? 'not-allowed' : 'pointer',
-                        fontSize: 14,
-                        fontWeight: 600,
-                      }}
-                    >
-                      <span>{opt.label}</span>
-                      <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: 'var(--accent-alpha, rgba(220, 38, 38, 0.2))', color: 'var(--accent, #e53e3e)' }}>
-                        {opt.format}
-                      </span>
-                    </button>
-                  ))}
+                  {DOWNLOAD_OPTIONS.map(opt => {
+                    const isThis = downloadingQuality === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        disabled={!!downloadingQuality}
+                        onClick={() => startDownload(opt.id)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '12px 16px',
+                          borderRadius: 8,
+                          background: isThis ? 'var(--bg-3, #3a3a3a)' : 'var(--bg-elevated, #2a2a2a)',
+                          border: isThis ? '1px solid var(--accent, #e53e3e)' : '1px solid var(--border, #3a3a3a)',
+                          color: 'inherit',
+                          cursor: downloadingQuality ? 'not-allowed' : 'pointer',
+                          fontSize: 14,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>{isThis ? 'Starting download...' : opt.label}</span>
+                        <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: 'var(--accent-alpha, rgba(220, 38, 38, 0.2))', color: 'var(--accent, #e53e3e)' }}>
+                          {opt.format}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
