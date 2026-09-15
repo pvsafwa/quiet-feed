@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Channel, Video, PlaylistMeta, Prog, Cursor, AdminUserData } from './lib/types';
 import { api, ApiError, setAuthToken, type ApiUser } from './lib/api';
 import { googleSignIn, googleSignOut } from './lib/auth';
-import { normProg, emptyProg, registerPlaylist } from './lib/progress';
+import { normProg, emptyProg, registerPlaylist, ensureV, markDone } from './lib/progress';
 import { checkForUpdate, snoozeUpdate, type AppRelease, CURRENT_APP_VERSION } from './lib/updater';
 
 const TOKEN_KEY = 'qf_token';
@@ -105,6 +105,7 @@ export interface Store {
   closePlaylist(): void;
   toggleMonitor(p: { id: string; title: string; channelTitle: string; channelId?: string; count: number }): Promise<void>;
   markAllWatched(vids: Video[]): void;
+  clearWatchHistory(): void;
   resetProg(): void;
 
   checkAppUpdate(manual?: boolean): Promise<void>;
@@ -147,6 +148,7 @@ export const useStore = create<Store>((set, get) => ({
   checkingUpdate: false,
 
   openPlayer(v, queue) {
+    ensureV(get().prog, v, v.seconds);
     const q = queue || [];
     const idx = q.findIndex(item => item.id === v.id);
     const queueIdx = idx >= 0 ? idx : 0;
@@ -507,21 +509,31 @@ export const useStore = create<Store>((set, get) => ({
   markAllWatched(vids) {
     if (!vids.length) return;
     const prog = get().prog;
-    vids.forEach(v => { const x = prog.v[v.id] || (prog.v[v.id] = { p: 0, d: 0, done: 0, w: 0, t: 0 }); if (v.seconds) x.d = v.seconds; x.done = 1; x.t = Date.now(); });
+    vids.forEach(v => {
+      ensureV(prog, v, v.seconds);
+      markDone(prog, v, v.seconds);
+    });
     get().commitProg();
     get().toast(`Marked ${vids.length} video${vids.length === 1 ? '' : 's'} watched`);
+  },
+
+  clearWatchHistory() {
+    const prog = get().prog;
+    for (const id in prog.v) {
+      const vp = prog.v[id];
+      vp.p = 0;
+      vp.w = 0;
+      vp.t = 0;
+    }
+    get().commitProg();
+    get().toast('Watch history cleared');
   },
 
   resetProg() { set({ prog: emptyProg(), progV: get().progV + 1, plDur: {} }); debouncedSaveProg(get().prog); get().toast('Progress reset'); },
 
   async fetchAdminDashboardData(): Promise<AdminUserData[]> {
-    const [usersRes, progRes] = await Promise.all([
-      api.adminUsers().catch(() => ({ users: [] })),
-      api.adminProgress().catch(() => ({ progressByUser: {} })),
-    ]);
-
+    const usersRes = await api.adminUsers().catch(() => ({ users: [] }));
     const users = usersRes.users || [];
-    const progressMap: Record<string, any> = progRes.progressByUser || {};
 
     return users.map(u => ({
       id: u.id,
@@ -531,7 +543,6 @@ export const useStore = create<Store>((set, get) => ({
       role: u.role,
       created_at: u.created_at || '',
       last_login: u.last_login || '',
-      progress: progressMap[u.id] ? normProg(progressMap[u.id]) : emptyProg(),
     }));
   },
 }));
@@ -548,13 +559,21 @@ export function feedItems(s: Partial<Store> | null | undefined): Video[] {
   const activeIds = new Set(active.map(c => c.id));
   const buffers = s?.vid?.buffers || {};
   const all = ([] as Video[]).concat(...Object.values(buffers)).filter(v => activeIds.size === 0 || activeIds.has(v.channelId));
-  const seen: Record<string, 1> = {}; let out: Video[] = [];
-  for (const v of all) { if (!seen[v.id]) { seen[v.id] = 1; out.push(v); } }
+  const seen: Record<string, 1> = {};
+  let out: Video[] = [];
+  for (const v of all) {
+    if (!seen[v.id]) {
+      seen[v.id] = 1;
+      out.push(v);
+    }
+  }
   out.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
   if (s?.filter && s.filter !== 'all') out = out.filter(v => v.channelId === s.filter);
   if (s?.hideShorts) out = out.filter(v => !(v.seconds != null && v.seconds > 0 && v.seconds <= SHORT_MAX));
   const q = (s?.search || '').trim().toLowerCase();
-  if (q) out = out.filter(v => v.title.toLowerCase().includes(q) || (v.channelTitle || '').toLowerCase().includes(q));
+  if (q) {
+    out = out.filter(v => v.title.toLowerCase().includes(q) || (v.channelTitle || '').toLowerCase().includes(q));
+  }
   return out;
 }
 
@@ -572,7 +591,9 @@ export function plList(s: Partial<Store> | null | undefined): PlaylistMeta[] {
   let list = items.filter(p => activeIds.size === 0 || activeIds.has(p.channelId));
   if (s?.filter && s.filter !== 'all') list = list.filter(p => p.channelId === s.filter);
   const q = (s?.search || '').trim().toLowerCase();
-  if (q) list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.channelTitle || '').toLowerCase().includes(q));
+  if (q) {
+    list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.channelTitle || '').toLowerCase().includes(q));
+  }
   list.sort((a, b) => (a.channelTitle || '').localeCompare(b.channelTitle || '') || (a.title || '').localeCompare(b.title || ''));
   return list;
 }
@@ -585,6 +606,7 @@ export function hasMorePlaylists(s: Partial<Store> | null | undefined): boolean 
 }
 
 export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
+  const progV = s?.prog?.v || {};
   const map = new Map<string, Video>();
   const buffers = s?.vid?.buffers || {};
   Object.values(buffers).forEach(list => list.forEach(v => map.set(v.id, v)));
@@ -592,24 +614,23 @@ export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
   if (s?.cur) map.set(s.cur.id, s.cur);
   (s?.playerQueue || []).forEach(v => map.set(v.id, v));
 
-  const history: Video[] = [];
-  const progV = s?.prog?.v || {};
-
   const entries = Object.entries(progV).filter(([_, p]) => p && (p.p > 0 || p.done || (p.w && p.w > 0)));
   entries.sort((a, b) => (b[1]?.t || 0) - (a[1]?.t || 0));
 
+  const history: Video[] = [];
   for (const [id, p] of entries) {
     if (map.has(id)) {
       history.push(map.get(id)!);
     } else {
+      const fallbackThumb = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
       history.push({
         id,
-        title: p.title || 'Watched Video',
-        channelId: '',
-        channelTitle: p.channelTitle || '',
-        channelThumb: '',
+        title: p.title || `Video ${id}`,
+        channelId: p.channelId || '',
+        channelTitle: p.channelTitle || 'YouTube',
+        channelThumb: p.channelThumb || '',
         published: p.t ? new Date(p.t).toISOString() : '',
-        thumb: p.thumb || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+        thumb: p.thumb || fallbackThumb,
         seconds: p.d || 0,
       });
     }

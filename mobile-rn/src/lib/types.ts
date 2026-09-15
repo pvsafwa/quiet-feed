@@ -39,7 +39,9 @@ export interface VProg {
   t: number;
   title?: string;
   channelTitle?: string;
+  channelThumb?: string;
   thumb?: string;
+  channelId?: string;
 }
 export interface PlMembership { ids: string[]; total: number; title: string; channel: string; channelId?: string }
 export interface MonMeta { title: string; channelId?: string; channelTitle: string; count: number }

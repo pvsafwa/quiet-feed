@@ -16,6 +16,8 @@ export function ensureV(prog: Prog, vObj: Video | string, dur?: number): VProg {
     if (vObj.title) v.title = vObj.title;
     if (vObj.channelTitle) v.channelTitle = vObj.channelTitle;
     if (vObj.thumb) v.thumb = vObj.thumb;
+    if (vObj.channelThumb) v.channelThumb = vObj.channelThumb;
+    if (vObj.channelId) v.channelId = vObj.channelId;
     if (vObj.seconds && !v.d) v.d = vObj.seconds;
   }
   return v;

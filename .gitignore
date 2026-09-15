@@ -12,3 +12,4 @@ dist/
 *.keystore
 *.jks
 google-services.json
+*.apk

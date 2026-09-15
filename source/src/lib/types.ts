@@ -39,6 +39,8 @@ export interface VProg {
   title?: string;
   channelTitle?: string;
   thumb?: string;
+  channelThumb?: string;
+  channelId?: string;
 }
 export interface PlMembership { ids: string[]; total: number; title: string; channel: string; channelId?: string }
 export interface MonMeta { title: string; channelId?: string; channelTitle: string; count: number }
@@ -56,11 +58,8 @@ export interface AdminUserData {
   name: string;
   picture: string;
   role: 'user' | 'admin';
-  location?: string;
-  timezone?: string;
   created_at: string;
   last_login: string;
-  progress?: Prog;
 }
 
 export interface Cursor { token: string; done: boolean }

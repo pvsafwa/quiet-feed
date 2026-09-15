@@ -273,6 +273,30 @@ function withAndroidPipMainActivity(config) {
     }
   }
 
+  fun seekNatively(positionSec: Float) {
+    val decorView = window?.decorView ?: return
+    val webViews = ArrayList<android.webkit.WebView>()
+    
+    fun findWebViews(view: android.view.View) {
+      if (view is android.webkit.WebView) {
+        webViews.add(view)
+      } else if (view is android.view.ViewGroup) {
+        for (i in 0 until view.childCount) {
+          findWebViews(view.getChildAt(i))
+        }
+      }
+    }
+    
+    findWebViews(decorView)
+    
+    val jsCommand = "if (window.player && typeof window.player.seekTo === 'function') { window.player.seekTo($positionSec, true); }"
+    for (wv in webViews) {
+      wv.post {
+        wv.evaluateJavascript(jsCommand, null)
+      }
+    }
+  }
+
   fun cleanStopPlayback() {
     try {
       isPlaying = false
@@ -304,6 +328,17 @@ function withAndroidPipMainActivity(config) {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
       try {
         mediaSession?.let { ms ->
+          if (durationSec > 0 && Math.abs(durationSec - currentDurationSec) > 0.5f) {
+            currentDurationSec = durationSec
+            val metaBuilder = android.media.MediaMetadata.Builder()
+              .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+              .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, currentChannel)
+              .putString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST, currentChannel)
+              .putLong(android.media.MediaMetadata.METADATA_KEY_DURATION, (durationSec * 1000).toLong())
+            ms.setMetadata(metaBuilder.build())
+          }
+
+          val posMs = (Math.max(0f, positionSec) * 1000).toLong()
           val stateBuilder = android.media.session.PlaybackState.Builder()
             .setActions(
               android.media.session.PlaybackState.ACTION_PLAY or
@@ -314,7 +349,7 @@ function withAndroidPipMainActivity(config) {
             )
             .setState(
               if (playing) android.media.session.PlaybackState.STATE_PLAYING else android.media.session.PlaybackState.STATE_PAUSED,
-              if (positionSec > 0) (positionSec * 1000).toLong() else android.media.session.PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+              posMs,
               if (playing) 1.0f else 0.0f
             )
           ms.setPlaybackState(stateBuilder.build())
@@ -368,11 +403,18 @@ function withAndroidPipMainActivity(config) {
                 cleanStopPlayback()
                 togglePlaybackNatively(false)
               }
+              override fun onSeekTo(pos: Long) {
+                val seekSec = pos / 1000f
+                currentPositionSec = seekSec
+                seekNatively(seekSec)
+                updateMediaSessionStateOnly(isPlaying, seekSec, currentDurationSec)
+              }
             })
             setFlags(android.media.session.MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or android.media.session.MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
           }
         }
 
+        val posMs = (Math.max(0f, currentPositionSec) * 1000).toLong()
         val stateBuilder = android.media.session.PlaybackState.Builder()
           .setActions(
             android.media.session.PlaybackState.ACTION_PLAY or
@@ -383,7 +425,7 @@ function withAndroidPipMainActivity(config) {
           )
           .setState(
             if (playing) android.media.session.PlaybackState.STATE_PLAYING else android.media.session.PlaybackState.STATE_PAUSED,
-            if (currentPositionSec > 0) (currentPositionSec * 1000).toLong() else android.media.session.PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+            posMs,
             if (playing) 1.0f else 0.0f
           )
 

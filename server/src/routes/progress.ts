@@ -1,37 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../http/async';
-import { requireAuth, requireAdmin } from '../auth/middleware';
-import { getProgress, saveProgress, getAllUsersProgress } from '../repos/progress';
-import { updateUserActivity } from '../repos/users';
+import { requireAuth } from '../auth/middleware';
+import { getProgress, saveProgress } from '../repos/progress';
 
 export const progressRouter = Router();
 
-function resolveLocation(timezone?: string, headers?: any): string {
-  const city = headers?.['cf-ipcity'] || headers?.['x-city'] || '';
-  const country = headers?.['cf-ipcountry'] || headers?.['x-country'] || '';
-  if (city && country) return `${city}, ${country}`;
-  if (country) return country;
-  if (timezone) {
-    const parts = timezone.split('/');
-    if (parts.length > 1) {
-      const cityOrRegion = parts[parts.length - 1].replace(/_/g, ' ');
-      const continent = parts[0].replace(/_/g, ' ');
-      return `${cityOrRegion}, ${continent}`;
-    }
-    return timezone;
-  }
-  return '';
-}
-
-// Admin can retrieve progress across all users
-progressRouter.get(
-  '/admin/all',
-  requireAdmin,
-  asyncHandler(async (_req, res) => {
-    res.json({ progressByUser: await getAllUsersProgress() });
-  }),
-);
+// Deprecated admin inspection endpoint — user activity tracking has been disabled
+progressRouter.get('/admin/all', (_req, res) => {
+  res.status(410).json({ error: 'User progress tracking is disabled' });
+});
 
 // The whole per-user progress doc — fetched on load, saved (debounced) by the client.
 progressRouter.get(
@@ -60,13 +38,7 @@ progressRouter.put(
       return;
     }
     await saveProgress(req.auth!.uid, parsed.data);
-
-    // Update user activity, location, and timezone
-    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
-    const timezone = (req.headers['x-timezone'] as string) || '';
-    const location = resolveLocation(timezone, req.headers);
-    await updateUserActivity(req.auth!.uid, { ip: clientIp, timezone, location }).catch(() => {});
-
     res.json({ ok: true });
   }),
 );
+

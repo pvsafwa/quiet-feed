@@ -32,7 +32,18 @@ function PlaylistCard({ p }: { p: PlaylistMeta }) {
             const t = e.target as HTMLImageElement;
             if (t.src.includes('maxresdefault.jpg')) t.src = t.src.replace('maxresdefault.jpg', 'hqdefault.jpg');
           }} />
-          <div className="play"><span><IPlay /></span></div>
+          <button className="star" style={{ right: 44, top: 8 }} title="Share playlist"
+            onClick={e => {
+              e.stopPropagation();
+              const url = `https://www.youtube.com/playlist?list=${p.id}`;
+              if (navigator.share) {
+                navigator.share({ title: p.title, text: p.title, url }).catch(() => {});
+              } else {
+                navigator.clipboard.writeText(url).then(() => useStore.getState().toast('Playlist link copied!'));
+              }
+            }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 14, height: 14 }}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg>
+          </button>
           <button className={`star ${mon ? 'on' : ''}`} title={mon ? 'Tracking this course' : 'Track this course'}
             onClick={e => { e.stopPropagation(); toggle({ id: p.id, title: p.title, channelTitle: p.channelTitle, channelId: p.channelId, count: p.count }); }}>
             <IStar filled={mon} />
@@ -164,6 +175,18 @@ export function PlaylistDetail() {
         )}
       </div>
       <div className="plhead-actions">
+        <button className="btn" style={{ flex: 'none' }} title="Share playlist"
+          onClick={() => {
+            const url = `https://www.youtube.com/playlist?list=${sel.id}`;
+            if (navigator.share) {
+              navigator.share({ title: sel.title, text: sel.title, url }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(url).then(() => useStore.getState().toast('Playlist link copied!'));
+            }
+          }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 15, height: 15 }}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg>
+          Share
+        </button>
         {selVideos.length > 0 && !allDone && (
           <button className="btn" style={{ flex: 'none' }} title="Mark every video in this playlist as watched"
             onClick={() => { if (confirm(`Mark all ${selVideos.length} videos in “${sel.title}” as watched?`)) markAllWatched(selVideos); }}>

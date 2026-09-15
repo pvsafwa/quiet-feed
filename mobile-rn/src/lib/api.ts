@@ -71,10 +71,11 @@ export const api = {
   channelPlaylists: (channelId: string, token = '') => req<{ items: PlaylistMeta[]; nextPageToken: string | null }>(`/channels/${encodeURIComponent(channelId)}/playlists${qp(token)}`),
   playlist: (id: string) => req<{ items: Video[] }>(`/playlists/${encodeURIComponent(id)}`),
   videoMeta: (id: string) => req<{ description: string; views?: number }>(`/videos/${encodeURIComponent(id)}/meta`),
+  downloadUrl: (id: string, quality = '720') => req<{ url: string; filename: string; isAudio: boolean }>(`/videos/${encodeURIComponent(id)}/download-url?quality=${encodeURIComponent(quality)}`),
 
   getProgress: () => req<{ progress: any }>('/progress'),
   putProgress: (data: unknown) => req<{ ok: boolean }>('/progress', { method: 'PUT', body: JSON.stringify(data) }),
 
   adminUsers: () => req<{ users: ApiUser[] }>('/auth/admin/users'),
-  adminProgress: () => req<{ progressByUser: Record<string, any> }>('/progress/admin/all'),
 };
+

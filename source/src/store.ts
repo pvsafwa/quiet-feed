@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import type { Channel, Video, PlaylistMeta, Prog, Cursor, Tab, AdminUserData } from './lib/types';
 import { api, ApiError, type ApiUser } from './lib/api';
-import { normProg, emptyProg, registerPlaylist } from './lib/progress';
+import { normProg, emptyProg, registerPlaylist, ensureV, markDone } from './lib/progress';
+
 
 // Only UI preferences live in the browser now; channels + progress live on the server.
 const LS = { prefs: 'qf_prefs', visit: 'qf_lastvisit', userChans: 'qf_user_selected_channels', lastPlayed: 'qf_last_played_video' };
@@ -98,6 +99,7 @@ export interface Store {
   closePlayer(): void;
   playNext(): void;
   playPrev(): void;
+  clearWatchHistory(): void;
   resetProg(): void;
 
   fetchAdminDashboardData(): Promise<AdminUserData[]>;
@@ -500,16 +502,15 @@ export const useStore = create<Store>((set, get) => ({
     if (!vids.length) return;
     const prog = get().prog;
     vids.forEach((v) => {
-      const x = prog.v[v.id] || (prog.v[v.id] = { p: 0, d: 0, done: 0, w: 0, t: 0 });
-      if (v.seconds) x.d = v.seconds;
-      x.done = 1;
-      x.t = Date.now();
+      ensureV(prog, v, v.seconds);
+      markDone(prog, v, v.seconds);
     });
     get().commitProg();
     get().toast(`Marked ${vids.length} video${vids.length === 1 ? '' : 's'} watched`);
   },
 
   openPlayer(v: Video, queue?: Video[]) {
+    ensureV(get().prog, v, v.seconds);
     const q = queue || [v];
     const idx = q.findIndex(item => item.id === v.id);
     const queueIdx = idx >= 0 ? idx : 0;
@@ -523,6 +524,7 @@ export const useStore = create<Store>((set, get) => ({
     const nextIdx = s.playerQueueIdx + 1;
     if (nextIdx < q.length) {
       const nextVideo = q[nextIdx];
+      ensureV(get().prog, nextVideo, nextVideo.seconds);
       set({ cur: nextVideo, playerQueueIdx: nextIdx, playerStartMinimized: false });
       saveLastPlayed(nextVideo, q, nextIdx);
     }
@@ -534,6 +536,7 @@ export const useStore = create<Store>((set, get) => ({
     const prevIdx = s.playerQueueIdx - 1;
     if (prevIdx >= 0) {
       const prevVideo = q[prevIdx];
+      ensureV(get().prog, prevVideo, prevVideo.seconds);
       set({ cur: prevVideo, playerQueueIdx: prevIdx, playerStartMinimized: false });
       saveLastPlayed(prevVideo, q, prevIdx);
     }
@@ -544,6 +547,18 @@ export const useStore = create<Store>((set, get) => ({
     get().commitProg();
   },
 
+  clearWatchHistory() {
+    const prog = get().prog;
+    for (const id in prog.v) {
+      const vp = prog.v[id];
+      vp.p = 0;
+      vp.w = 0;
+      vp.t = 0;
+    }
+    get().commitProg();
+    get().toast('Watch history cleared');
+  },
+
   resetProg() {
     set({ prog: emptyProg(), progV: get().progV + 1, plDur: {} });
     debouncedSaveProg(get().prog);
@@ -551,12 +566,8 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async fetchAdminDashboardData(): Promise<AdminUserData[]> {
-    const [usersRes, progRes] = await Promise.all([
-      api.adminUsers().catch(() => ({ users: [] })),
-      api.adminProgress().catch(() => ({ progressByUser: {} })),
-    ]);
+    const usersRes = await api.adminUsers().catch(() => ({ users: [] }));
     const users = usersRes.users || [];
-    const progressMap: Record<string, any> = progRes.progressByUser || {};
 
     return users.map(u => ({
       id: u.id,
@@ -566,7 +577,6 @@ export const useStore = create<Store>((set, get) => ({
       role: u.role,
       created_at: u.created_at || '',
       last_login: u.last_login || '',
-      progress: progressMap[u.id] ? normProg(progressMap[u.id]) : emptyProg(),
     }));
   },
 }));
@@ -630,6 +640,7 @@ export function hasMorePlaylists(s: Partial<Store> | null | undefined): boolean 
 }
 
 export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
+  const progV = s?.prog?.v || {};
   const map = new Map<string, Video>();
   const buffers = s?.vid?.buffers || {};
   Object.values(buffers).forEach((list) => list.forEach((v) => map.set(v.id, v)));
@@ -637,24 +648,23 @@ export function watchHistory(s: Partial<Store> | null | undefined): Video[] {
   if (s?.cur) map.set(s.cur.id, s.cur);
   (s?.playerQueue || []).forEach(v => map.set(v.id, v));
 
-  const history: Video[] = [];
-  const progV = s?.prog?.v || {};
-
   const entries = Object.entries(progV).filter(([_, p]) => p && (p.p > 0 || p.done || (p.w && p.w > 0)));
   entries.sort((a, b) => (b[1]?.t || 0) - (a[1]?.t || 0));
 
+  const history: Video[] = [];
   for (const [id, p] of entries) {
     if (map.has(id)) {
       history.push(map.get(id)!);
     } else {
+      const fallbackThumb = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
       history.push({
         id,
-        title: p.title || 'Watched Video',
-        channelId: '',
-        channelTitle: p.channelTitle || '',
-        channelThumb: '',
+        title: p.title || `Video ${id}`,
+        channelId: p.channelId || '',
+        channelTitle: p.channelTitle || 'YouTube',
+        channelThumb: p.channelThumb || '',
         published: '',
-        thumb: p.thumb || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+        thumb: p.thumb || fallbackThumb,
         seconds: p.d || 0,
       });
     }

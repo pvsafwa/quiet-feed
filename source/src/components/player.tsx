@@ -35,6 +35,14 @@ const QUALITY_OPTIONS = [
   { id: 'tiny', label: '144p', short: '144p' },
 ];
 
+const DOWNLOAD_OPTIONS = [
+  { id: '1080', label: '1080p Full HD', format: 'MP4' },
+  { id: '720', label: '720p HD', format: 'MP4' },
+  { id: '480', label: '480p SD', format: 'MP4' },
+  { id: '360', label: '360p Medium', format: 'MP4' },
+  { id: 'audio', label: 'Audio Only', format: 'MP3' },
+];
+
 export function PlayerModal() {
   const cur = useStore(s => s.cur);
   const playerQueue = useStore(s => s.playerQueue);
@@ -76,6 +84,8 @@ export function PlayerModal() {
     try { return localStorage.getItem('qf_player_quality') || 'auto'; } catch { return 'auto'; }
   });
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
 
   const hasPrev = playerQueueIdx > 0;
@@ -200,12 +210,17 @@ export function PlayerModal() {
   const toggleWatched = () => {
     if (!cur) return;
     const progStore = useStore.getState().prog;
-    const v = progStore.v[cur.id] || (progStore.v[cur.id] = { p: 0, d: 0, done: 0, w: 0, t: 0 });
-    const nextDone = v.done ? 0 : 1;
-    v.done = nextDone;
-    v.t = Date.now();
-    useStore.getState().commitProg();
-    useStore.getState().toast(nextDone ? 'Marked as completed' : 'Marked as uncompleted');
+    const d = isDone(progStore, cur.id);
+    if (d) {
+      const vRec = progStore.v[cur.id];
+      if (vRec) vRec.done = 0;
+      useStore.getState().commitProg();
+      useStore.getState().toast('Marked unwatched');
+    } else {
+      markDone(progStore, cur, totalDuration || cur.seconds);
+      useStore.getState().commitProg();
+      useStore.getState().toast('Marked watched');
+    }
   };
 
   const handleShare = async () => {
@@ -225,6 +240,40 @@ export function PlayerModal() {
     }
   };
 
+  const startDownload = async (qualityId: string) => {
+    if (!cur) return;
+    setDownloading(true);
+    try {
+      useStore.getState().toast('Preparing download...');
+      const res = await api.downloadUrl(cur.id, qualityId).catch(() => null);
+      if (res && res.url && res.url.startsWith('http') && !res.url.includes('youtube.com/watch')) {
+        const link = document.createElement('a');
+        link.href = res.url;
+        link.download = res.filename || `${cur.id}.${res.isAudio ? 'mp3' : 'mp4'}`;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        useStore.getState().toast('Download started');
+      } else {
+        const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+        const link = document.createElement('a');
+        link.href = streamUrl;
+        link.setAttribute('download', `${cur.title || cur.id}.${qualityId === 'audio' ? 'mp3' : 'mp4'}`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        useStore.getState().toast('Download started');
+      }
+      setDownloadModalOpen(false);
+    } catch {
+      const streamUrl = `/api/videos/${encodeURIComponent(cur.id)}/download-stream?quality=${encodeURIComponent(qualityId)}`;
+      window.open(streamUrl, '_blank');
+      setDownloadModalOpen(false);
+    } finally {
+      setDownloading(false);
+    }
+  };
   function stopTick() {
     if (tickRef.current) {
       clearInterval(tickRef.current);
@@ -857,7 +906,7 @@ export function PlayerModal() {
 
                 <div className="player-controls-divider" />
 
-                {/* ROW 2: UTILITY ACTIONS (EQUAL 4-COLUMN FLEX GRID) */}
+                {/* ROW 2: UTILITY ACTIONS (EQUAL 5-COLUMN FLEX GRID) */}
                 <div className="player-utility-row">
                   <button className="ctrl-btn-util" onClick={toggleFullscreen} title="Fullscreen">
                     <IExpand style={{ width: 16, height: 16 }} />
@@ -876,6 +925,13 @@ export function PlayerModal() {
                     <span style={{ color: captionsOn ? 'var(--accent)' : 'inherit', fontWeight: captionsOn ? 700 : 'inherit' }}>
                       {captionsOn ? 'CC On' : 'CC Off'}
                     </span>
+                  </button>
+
+                  <button className="ctrl-btn-util" onClick={() => setDownloadModalOpen(true)} title="Download MP4">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: 16, height: 16 }}>
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    <span>Download</span>
                   </button>
 
                   <button className="ctrl-btn-util" onClick={handleShare} title="Share video">
@@ -912,6 +968,67 @@ export function PlayerModal() {
                 </div>
               )}
             </>
+          )}
+          {/* Download Quality Modal */}
+          {downloadModalOpen && (
+            <div className="download-modal-overlay" onClick={() => setDownloadModalOpen(false)} style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.75)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+            }}>
+              <div className="download-modal-box" onClick={e => e.stopPropagation()} style={{
+                background: 'var(--bg-surface, #1e1e1e)',
+                color: 'var(--ink, #fff)',
+                borderRadius: 12,
+                padding: 24,
+                maxWidth: 360,
+                width: '100%',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                border: '1px solid var(--border, #333)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Download Video</h3>
+                  <button onClick={() => setDownloadModalOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--ink-soft, #888)', cursor: 'pointer', padding: 4 }}>
+                    <IClose />
+                  </button>
+                </div>
+                <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--ink-soft, #aaa)' }}>
+                  Select quality to download:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {DOWNLOAD_OPTIONS.map(opt => (
+                    <button
+                      key={opt.id}
+                      disabled={downloading}
+                      onClick={() => startDownload(opt.id)}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        borderRadius: 8,
+                        background: 'var(--bg-elevated, #2a2a2a)',
+                        border: '1px solid var(--border, #3a3a3a)',
+                        color: 'inherit',
+                        cursor: downloading ? 'not-allowed' : 'pointer',
+                        fontSize: 14,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>{opt.label}</span>
+                      <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: 'var(--accent-alpha, rgba(220, 38, 38, 0.2))', color: 'var(--accent, #e53e3e)' }}>
+                        {opt.format}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
         </motion.div>
       )}

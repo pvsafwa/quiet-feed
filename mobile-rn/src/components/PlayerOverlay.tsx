@@ -11,6 +11,8 @@ import {
   BackHandler,
   PanResponder,
   Modal,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +33,8 @@ import { addWatch, setPos, markDone, isDone } from '../lib/progress';
 import { ago, fmtDur } from '../lib/format';
 import { colors, radius } from '../theme';
 import ExpoPip from '../../modules/expo-pip';
+import { API_URL } from '../config';
+import { api } from '../lib/api';
 
 const MINI_PLAYER_HEIGHT = 60;
 const TAB_BAR_HEIGHT = 56;
@@ -46,6 +50,15 @@ export const QUALITY_OPTIONS = [
   { id: 'small', label: '240p', short: '240p' },
   { id: 'tiny', label: '144p', short: '144p' },
 ];
+
+const DOWNLOAD_OPTIONS = [
+  { id: '1080', label: '1080p Full HD', format: 'MP4' },
+  { id: '720', label: '720p HD', format: 'MP4' },
+  { id: '480', label: '480p SD', format: 'MP4' },
+  { id: '360', label: '360p Medium', format: 'MP4' },
+  { id: 'audio', label: 'Audio Only', format: 'MP3' },
+];
+
 
 export function PlayerOverlay() {
   const cur = useStore(s => s.cur);
@@ -274,6 +287,30 @@ function PlayerWindow({ video }: { video: Video }) {
   const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
   const [cancelledAutoPlay, setCancelledAutoPlay] = useState(false);
 
+  // Download state
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+
+  // Listen for native seek and download progress events
+  useEffect(() => {
+    const subProgress = ExpoPip.addListener?.('onVideoDownloadProgress', (ev: any) => {
+      if (typeof ev?.progress === 'number') {
+        setDownloadProgress(ev.progress);
+      }
+    });
+    const subSeek = DeviceEventEmitter.addListener('onPipSeek', (posSec: number) => {
+      if (typeof posSec === 'number') {
+        playerRef.current?.seekTo(posSec, true);
+        setCurrentTime(posSec);
+      }
+    });
+    return () => {
+      subProgress?.remove?.();
+      subSeek.remove();
+    };
+  }, []);
+
   // Queue context from store
   const playerQueue = useStore(s => s.playerQueue);
   const playerQueueIdx = useStore(s => s.playerQueueIdx);
@@ -321,6 +358,7 @@ function PlayerWindow({ video }: { video: Video }) {
       return next;
     });
   };
+
 
   // Handle Android hardware back press when in landscape mode
   useEffect(() => {
@@ -621,6 +659,7 @@ function PlayerWindow({ video }: { video: Video }) {
     setWantPlay(true);
     setPlaying(true);
     ExpoPip.setPlaybackState(true);
+    ExpoPip.syncPlaybackPosition(0, totalDuration || video.seconds || 0, true);
   };
 
   const handleSeekOffset = (secondsOffset: number) => {
@@ -628,8 +667,18 @@ function PlayerWindow({ video }: { video: Video }) {
     const newPos = Math.max(0, Math.min(totalDuration || 9999, currentTime + secondsOffset));
     playerRef.current?.seekTo(newPos, true);
     setCurrentTime(newPos);
+    ExpoPip.syncPlaybackPosition(newPos, totalDuration || video.seconds || 0, playing);
   };
 
+  const handleSeekToRatio = (ratio: number) => {
+    resetHideTimer();
+    if (totalDuration <= 0) return;
+    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    const targetSec = clampedRatio * totalDuration;
+    playerRef.current?.seekTo(targetSec, true);
+    setCurrentTime(targetSec);
+    ExpoPip.syncPlaybackPosition(targetSec, totalDuration || video.seconds || 0, playing);
+  };
   const handleShare = async () => {
     resetHideTimer();
     try {
@@ -642,6 +691,42 @@ function PlayerWindow({ video }: { video: Video }) {
       console.warn('Share error:', e);
     }
   };
+
+  const startDownload = async (qualityId: string) => {
+    if (!video) return;
+    setDownloading(true);
+    setDownloadProgress(0);
+    try {
+      useStore.getState().toast('Resolving download...');
+      const res = await api.downloadUrl(video.id, qualityId).catch(() => null);
+      const isAudio = qualityId === 'audio';
+      const cleanTitle = (video.title || video.id).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
+      const fileName = `${cleanTitle}_${qualityId}.${isAudio ? 'mp3' : 'mp4'}`;
+
+      let downloadUrl = res?.url;
+      if (!downloadUrl || downloadUrl.includes('youtube.com/watch')) {
+        downloadUrl = `${API_URL}/videos/${encodeURIComponent(video.id)}/download-stream?quality=${qualityId}`;
+      }
+
+      useStore.getState().toast('Downloading to Downloads folder...');
+      await ExpoPip.downloadVideo(downloadUrl, fileName);
+      useStore.getState().toast(`Saved: ${fileName}`);
+      setDownloadModalOpen(false);
+    } catch (err: any) {
+      console.warn('Video download error:', err);
+      try {
+        const streamUrl = `${API_URL}/videos/${encodeURIComponent(video.id)}/download-stream?quality=${qualityId}`;
+        Linking.openURL(streamUrl);
+        setDownloadModalOpen(false);
+      } catch {
+        useStore.getState().toast('Download failed', true);
+      }
+    } finally {
+      setDownloading(false);
+      setDownloadProgress(0);
+    }
+  };
+
 
   const toggleWatched = () => {
     resetHideTimer();
@@ -1101,6 +1186,10 @@ function PlayerWindow({ video }: { video: Video }) {
                         />
                       </Pressable>
 
+                      <Pressable style={styles.utilityBtn} onPress={() => setDownloadModalOpen(true)} accessibilityLabel="Download Video">
+                        <Ionicons name="download-outline" size={18} color={colors.inkSoft} />
+                      </Pressable>
+
                       <Pressable style={styles.utilityBtn} onPress={handleShare} accessibilityLabel="Share">
                         <Ionicons name="share-social-outline" size={18} color={colors.inkSoft} />
                       </Pressable>
@@ -1222,6 +1311,58 @@ function PlayerWindow({ video }: { video: Video }) {
         </Modal>
 
       </Animated.View>
+
+      {/* Download Quality Selection Modal */}
+      <Modal
+        visible={downloadModalOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => !downloading && setDownloadModalOpen(false)}
+      >
+        <Pressable
+          style={styles.downloadModalOverlay}
+          onPress={() => !downloading && setDownloadModalOpen(false)}
+        >
+          <View style={styles.downloadModalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.downloadModalHeader}>
+              <Text style={styles.downloadModalTitle}>Download Video</Text>
+              {!downloading && (
+                <Pressable onPress={() => setDownloadModalOpen(false)} hitSlop={10}>
+                  <Ionicons name="close" size={22} color={colors.inkSoft} />
+                </Pressable>
+              )}
+            </View>
+
+            {downloading ? (
+              <View style={styles.downloadProgressWrap}>
+                <ActivityIndicator size="large" color={colors.accent} />
+                <Text style={styles.downloadProgressText}>
+                  Downloading... {downloadProgress > 0 ? `${downloadProgress}%` : ''}
+                </Text>
+                <Text style={styles.downloadProgressSub}>Saving to your device's Downloads folder</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.downloadModalSub}>Select format & quality to save:</Text>
+                <View style={styles.downloadOptionsList}>
+                  {DOWNLOAD_OPTIONS.map((opt) => (
+                    <Pressable
+                      key={opt.id}
+                      style={styles.downloadOptionItem}
+                      onPress={() => startDownload(opt.id)}
+                    >
+                      <Text style={styles.downloadOptionLabel}>{opt.label}</Text>
+                      <View style={styles.downloadFormatBadge}>
+                        <Text style={styles.downloadFormatBadgeText}>{opt.format}</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1661,5 +1802,90 @@ const styles = StyleSheet.create({
   modalOptionTextSelected: {
     color: colors.accent,
     fontWeight: '700',
+  },
+
+  /* DOWNLOAD MODAL STYLES */
+  downloadModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  downloadModalContent: {
+    backgroundColor: colors.bg2,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    width: '100%',
+    maxWidth: 380,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  downloadModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  downloadModalTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  downloadModalSub: {
+    color: colors.inkSoft,
+    fontSize: 13,
+    marginBottom: 14,
+  },
+  downloadOptionsList: {
+    gap: 8,
+  },
+  downloadOptionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.bg3,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  downloadOptionLabel: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  downloadFormatBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+  },
+  downloadFormatBadgeText: {
+    color: colors.inkSoft,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  downloadProgressWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    gap: 12,
+  },
+  downloadProgressText: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  downloadProgressSub: {
+    color: colors.inkSoft,
+    fontSize: 12,
+    textAlign: 'center',
   },
 });

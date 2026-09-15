@@ -10,6 +10,7 @@ import { authRouter } from './auth/routes';
 import { channelsRouter } from './routes/channels';
 import { contentRouter } from './routes/content';
 import { progressRouter } from './routes/progress';
+import { downloadRouter } from './routes/download';
 import { startRefreshWorker, stopRefreshWorker } from './worker/refresh';
 
 async function main(): Promise<void> {
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
   app.use('/api/auth', authRouter);
   app.use('/api/channels', channelsRouter);
+  app.use('/api/videos', downloadRouter); // /api/videos/:id/download-url, /api/videos/:id/download-stream
   app.use('/api', contentRouter); // /api/channels/:id/uploads, /api/playlists/:id, /api/videos/:id/meta
   app.use('/api/progress', progressRouter);
 

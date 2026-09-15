@@ -15,6 +15,7 @@ export function ProgressTab() {
   const openPlaylist = useStore(s => s.openPlaylist);
   const openPlayer = useStore(s => s.openPlayer);
   const toggle = useStore(s => s.toggleMonitor);
+  const clearWatchHistory = useStore(s => s.clearWatchHistory);
 
   const [activeSubTab, setActiveSubTab] = useState<'courses' | 'history'>('courses');
 
@@ -149,6 +150,21 @@ export function ProgressTab() {
       {/* Watch History Tab */}
       {activeSubTab === 'history' && (
         <div className="watch-history-wrap">
+          {historyList.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+              <button
+                className="btn"
+                style={{ fontSize: '0.85rem', padding: '6px 12px' }}
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear your watch history?')) {
+                    clearWatchHistory();
+                  }
+                }}
+              >
+                Clear history
+              </button>
+            </div>
+          )}
           {!historyList.length ? (
             <div className="panelbox empty-box">
               <div className="pb-h">No watch history</div>

@@ -51,7 +51,8 @@ class ExpoPipModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ExpoPip")
 
-    Events("onDownloadProgress")
+    Events("onDownloadProgress", "onVideoDownloadProgress")
+
 
     Function("enterPip") { aspectRatioWidth: Int?, aspectRatioHeight: Int? ->
       val activity = appContext.currentActivity ?: return@Function false
@@ -281,5 +282,107 @@ class ExpoPipModule : Module() {
         }
       }
     }
+
+    AsyncFunction("downloadVideo") { urlString: String, fileName: String, promise: Promise ->
+      CoroutineScope(Dispatchers.IO).launch {
+        try {
+          val context = appContext.reactContext ?: appContext.currentActivity ?: throw Exception("Context unavailable")
+          val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.filesDir
+
+          if (!downloadsDir.exists()) {
+            downloadsDir.mkdirs()
+          }
+
+          val destinationFile = File(downloadsDir, fileName)
+          if (destinationFile.exists()) {
+            destinationFile.delete()
+          }
+
+          var currentUrl = URL(urlString)
+          var connection = currentUrl.openConnection() as HttpURLConnection
+          connection.instanceFollowRedirects = true
+          connection.connectTimeout = 20000
+          connection.readTimeout = 45000
+          connection.connect()
+
+          var status = connection.responseCode
+          var redirectCount = 0
+          while ((status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == 307 || status == 308 || status == 302) && redirectCount < 10) {
+            val newLocation = connection.getHeaderField("Location") ?: break
+            currentUrl = URL(newLocation)
+            connection.disconnect()
+            connection = currentUrl.openConnection() as HttpURLConnection
+            connection.connectTimeout = 20000
+            connection.readTimeout = 45000
+            connection.connect()
+            status = connection.responseCode
+            redirectCount++
+          }
+
+          if (status !in 200..299) {
+            throw Exception("Download failed with HTTP status $status")
+          }
+
+          val totalLength = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            connection.contentLengthLong
+          } else {
+            connection.getHeaderField("Content-Length")?.toLongOrNull() ?: connection.contentLength.toLong()
+          }
+
+          val inputStream = BufferedInputStream(connection.inputStream)
+          val outputStream = FileOutputStream(destinationFile)
+
+          val buffer = ByteArray(32768)
+          var totalBytesRead = 0L
+          var bytesRead: Int
+          var lastEmitTime = 0L
+
+          try {
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+              outputStream.write(buffer, 0, bytesRead)
+              totalBytesRead += bytesRead
+
+              val now = System.currentTimeMillis()
+              if (now - lastEmitTime > 200 || (totalLength > 0 && totalBytesRead == totalLength)) {
+                lastEmitTime = now
+                val progressPct = if (totalLength > 0) ((totalBytesRead * 100) / totalLength).toInt() else 0
+
+                try {
+                  sendEvent("onVideoDownloadProgress", mapOf(
+                    "progress" to progressPct,
+                    "bytesDownloaded" to totalBytesRead.toDouble(),
+                    "totalBytes" to totalLength.toDouble()
+                  ))
+                } catch (e: Exception) {
+                  Log.e("ExpoPipModule", "Failed to send onVideoDownloadProgress event", e)
+                }
+              }
+            }
+            outputStream.flush()
+          } finally {
+            try { outputStream.close() } catch (e: Exception) {}
+            try { inputStream.close() } catch (e: Exception) {}
+            try { connection.disconnect() } catch (e: Exception) {}
+          }
+
+          try {
+            android.media.MediaScannerConnection.scanFile(
+              context,
+              arrayOf(destinationFile.absolutePath),
+              null,
+              null
+            )
+          } catch (e: Exception) {}
+
+          promise.resolve(destinationFile.absolutePath)
+        } catch (e: Exception) {
+          Log.e("ExpoPipModule", "Video download failed", e)
+          promise.reject("ERR_DOWNLOAD_FAILED", e.message ?: "Video download failed", e)
+        }
+      }
+    }
   }
 }
+

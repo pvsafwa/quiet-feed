@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, FlatList, Image, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, FlatList, Image, Pressable, StyleSheet, ScrollView, Share } from 'react-native';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useShallow } from 'zustand/react/shallow';
@@ -130,7 +130,25 @@ export function PlaylistsScreen() {
                 {ids.length > 0 && (
                   <View style={styles.barWrap}><View style={[styles.barFill, { width: `${pct}%` }]} /></View>
                 )}
-                {ids.length > 0 && <Text style={styles.prog}>{done}/{ids.length} done · {pct}%</Text>}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                  {ids.length > 0 ? (
+                    <Text style={styles.prog}>{done}/{ids.length} done · {pct}%</Text>
+                  ) : <View />}
+                  <Pressable
+                    hitSlop={8}
+                    style={{ padding: 4 }}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      Share.share({
+                        title: p.title,
+                        message: `${p.title}\nhttps://www.youtube.com/playlist?list=${p.id}`,
+                        url: `https://www.youtube.com/playlist?list=${p.id}`,
+                      }).catch(() => {});
+                    }}
+                  >
+                    <Ionicons name="share-social-outline" size={16} color={colors.inkSoft} />
+                  </Pressable>
+                </View>
               </View>
             </Pressable>
           );

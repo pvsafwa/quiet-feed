@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, Share } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { PlaylistMeta } from '../lib/types';
@@ -19,17 +19,32 @@ export function PlaylistDetailScreen() {
   const selVideos = useStore(s => s.selVideos);
   const busy = useStore(s => s.busy);
   const prog = useStore(s => s.prog);
-  useStore(s => s.progV);
   const toggle = useStore(s => s.toggleMonitor);
   const markAllWatched = useStore(s => s.markAllWatched);
 
-  useEffect(() => { openPlaylist(playlist); }, [playlist.id, openPlaylist]);
+  useEffect(() => {
+    navigation.setOptions({ title: playlist.title });
+    openPlaylist(playlist);
+  }, [playlist.id]);
 
-  const here = sel?.id === playlist.id ? selVideos : [];
-  const doneN = here.filter(v => isDone(prog, v.id)).length;
-  const pct = here.length ? Math.round((doneN / here.length) * 100) : 0;
+  const here = sel && sel.id === playlist.id ? selVideos : [];
   const mon = isMon(prog, playlist.id);
-  const allDone = here.length > 0 && doneN === here.length;
+  const m = prog.pl[playlist.id];
+  const ids = m?.ids || [];
+  const doneN = ids.filter(id => isDone(prog, id)).length;
+  const pct = ids.length ? Math.round((doneN / ids.length) * 100) : 0;
+  const allDone = ids.length > 0 && doneN === ids.length;
+
+  const handleShare = async () => {
+    try {
+      const url = `https://www.youtube.com/playlist?list=${playlist.id}`;
+      await Share.share({
+        title: playlist.title,
+        message: `${playlist.title}\n${url}`,
+        url,
+      });
+    } catch {}
+  };
 
   const header = (
     <View style={{ marginBottom: 16 }}>
@@ -42,6 +57,9 @@ export function PlaylistDetailScreen() {
         </>
       )}
       <View style={styles.actions}>
+        <Pressable style={styles.btn} onPress={handleShare}>
+          <Ionicons name="share-social-outline" size={15} color={colors.ink} /><Text style={styles.btnText}>Share</Text>
+        </Pressable>
         {here.length > 0 && !allDone && (
           <Pressable style={styles.btn} onPress={() => markAllWatched(here)}>
             <Ionicons name="checkmark-done" size={15} color={colors.ink} /><Text style={styles.btnText}>Mark all watched</Text>
